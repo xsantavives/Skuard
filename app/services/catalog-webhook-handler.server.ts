@@ -11,11 +11,11 @@ type AuthenticateWebhook = (request: Request) => Promise<{
 
 type IngestWebhook = (input: Parameters<typeof ingestCatalogWebhook>[0]) => Promise<unknown>;
 
-export function createProductWebhookAction(
+export function createCatalogWebhookAction(
   authenticateWebhook: AuthenticateWebhook = authenticate.webhook,
   ingest: IngestWebhook = ingestCatalogWebhook,
 ) {
-  return async function handleProductWebhook({request}: ActionFunctionArgs) {
+  return async function handleCatalogWebhook({request}: ActionFunctionArgs) {
     const {payload, shop, topic, webhookId} = await authenticateWebhook(request);
 
     if (!CATALOG_TOPICS.includes(topic as (typeof CATALOG_TOPICS)[number])) {
@@ -32,4 +32,4 @@ export function createProductWebhookAction(
   };
 }
 
-export const handleProductWebhook = createProductWebhookAction();
+export const handleCatalogWebhook = createCatalogWebhookAction();

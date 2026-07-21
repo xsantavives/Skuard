@@ -31,14 +31,20 @@ enum WebhookState {
   FAILED
 }
 
+enum CatalogResourceType {
+  PRODUCT
+  COLLECTION
+}
+
 model CatalogWebhook {
   id                String       @id @default(cuid())
   webhookId         String       @unique
   shop              String
   topic             String
+  resourceType      CatalogResourceType
   payload           String
   payloadHash       String
-  productResourceId String?
+  resourceId        String?
   occurredAt        DateTime?
   state             WebhookState @default(RECEIVED)
   error             String?
@@ -46,4 +52,5 @@ model CatalogWebhook {
   processedAt       DateTime?
 
   @@index([shop, receivedAt])
+  @@index([shop, resourceType, receivedAt])
 }

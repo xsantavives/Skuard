@@ -36,3 +36,15 @@ uri = "/webhooks/products/update"
 [[webhooks.subscriptions]]
 topics = [ "products/delete" ]
 uri = "/webhooks/products/delete"
+
+[[webhooks.subscriptions]]
+topics = [ "collections/create" ]
+uri = "/webhooks/collections/create"
+
+[[webhooks.subscriptions]]
+topics = [ "collections/update" ]
+uri = "/webhooks/collections/update"
+
+[[webhooks.subscriptions]]
+topics = [ "collections/delete" ]
+uri = "/webhooks/collections/delete"
