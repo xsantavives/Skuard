@@ -104,3 +104,13 @@ For product and collection create/update topics, the snapshot state is the compl
 Coverage is limited to product and collection create, update, and delete webhooks. The authenticated internal diagnostics section is shop-scoped, bounded, filterable, and displays snapshot metadata only—not state or raw webhook payloads.
 
 Snapshots begin with webhooks processed after SKU-004 deployment. Historical `CatalogWebhook` evidence remains retained, but historical backfill is outside this slice. SKU-004 also excludes comparison and diffing, changed-field extraction, mutable current state, merchant timelines, policies, incidents, alerts, reconciliation or polling, Admin API fetching, variants/inventory/publications/metafields as separate snapshots, recovery, billing, AI, automation, write scopes, mutations, and all Shopify writes.
+
+## SKU-005 catalog activity timeline
+
+The authenticated `/app/catalog` route is the merchant-facing catalog activity timeline; `/app/diagnostics` remains a separate internal operational view. Timeline entries are a metadata-only read model queried directly from immutable `CatalogSnapshot` records. There is no `CatalogTimeline` table, denormalized activity persistence, or mutable current-state projection.
+
+Lifecycle actions are derived only from the source topic: `products/create` and `collections/create` map to **Created**, update topics map to **Updated**, and delete topics map to **Deleted**. The deterministic newest-first ordering is effective event time (`occurredAt` when present, otherwise `receivedAt`), then `receivedAt`, `createdAt`, and snapshot ID. The main timeline uses opaque full-ordering-tuple cursor pagination, defaults to 25 entries, and is capped at 50; resource type, action, topic, and tombstone status filters are allow-listed and always composed with authenticated-shop isolation.
+
+`/app/catalog/:resourceType/:resourceId` provides up to 25 recent events (bounded at 50) for one exact shop-scoped resource using the same ordering. Its current status is derived from the newest snapshot: a tombstone means **Deleted**, while a non-tombstone means **Active**. Deleted resource history therefore remains visible without a mutable current-state table.
+
+Activity begins only with snapshots produced after SKU-004 deployment; retained earlier webhook evidence is not backfilled. SKU-005 intentionally does not parse snapshot state for names or other attributes and adds no field comparison, structural or semantic diff, changed-field extraction, Shopify fetch, write operation, policy, incident, alert, notification, recovery, billing, AI, or automation.
