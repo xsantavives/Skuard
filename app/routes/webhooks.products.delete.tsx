@@ -1,1 +1,1 @@
-export {handleProductWebhook as action} from "../services/product-webhook-handler.server";
+export {handleCatalogWebhook as action} from "../services/catalog-webhook-handler.server";

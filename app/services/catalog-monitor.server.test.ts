@@ -1,10 +1,12 @@
-import {Prisma, WebhookState, type CatalogWebhook} from "@prisma/client";
+import {CatalogResourceType, Prisma, WebhookState, type CatalogWebhook} from "@prisma/client";
 import {describe, expect, it, vi} from "vitest";
 import {
   canonicalJson,
   ingestCatalogWebhook,
   payloadHash,
+  parseCatalogDiagnosticFilters,
   queryCatalogDiagnostics,
+  resourceTypeForTopic,
   type CatalogWebhookRepository,
 } from "./catalog-monitor.server";
 
@@ -15,7 +17,8 @@ const event = (overrides: Partial<CatalogWebhook> = {}): CatalogWebhook => ({
   topic: "PRODUCTS_UPDATE",
   payload: '{"id":42}',
   payloadHash: "hash",
-  productResourceId: null,
+  resourceType: CatalogResourceType.PRODUCT,
+  resourceId: null,
   occurredAt: null,
   state: WebhookState.RECEIVED,
   error: null,
@@ -36,6 +39,14 @@ function repository(overrides: Partial<CatalogWebhookRepository> = {}): CatalogW
 }
 
 describe("catalog monitor ingestion", () => {
+  it.each(["PRODUCTS_CREATE", "PRODUCTS_UPDATE", "PRODUCTS_DELETE"])("classifies %s as PRODUCT", (topic) => {
+    expect(resourceTypeForTopic(topic)).toBe(CatalogResourceType.PRODUCT);
+  });
+
+  it.each(["COLLECTIONS_CREATE", "COLLECTIONS_UPDATE", "COLLECTIONS_DELETE"])("classifies %s as COLLECTION", (topic) => {
+    expect(resourceTypeForTopic(topic)).toBe(CatalogResourceType.COLLECTION);
+  });
+
   it("hashes object payloads deterministically", () => {
     expect(payloadHash({id: 1, title: "Shirt"})).toBe(payloadHash({title: "Shirt", id: 1}));
     expect(payloadHash({id: 1})).toMatch(/^[a-f0-9]{64}$/);
@@ -82,6 +93,48 @@ describe("catalog monitor ingestion", () => {
     expect(JSON.parse(persisted.payload)).toEqual(payload);
   });
 
+  it.each(["COLLECTIONS_CREATE", "COLLECTIONS_UPDATE", "COLLECTIONS_DELETE"])(
+    "ingests %s with canonical payload and collection metadata",
+    async (topic) => {
+      const repo = repository();
+      const payload = {
+        updated_at: "2026-07-22T10:30:00Z",
+        id: 42,
+        rules: [{column: "TITLE", relation: "CONTAINS", condition: "Sale"}],
+        admin_graphql_api_id: "gid://shopify/Collection/42",
+      };
+
+      await ingestCatalogWebhook({webhookId: topic, shop: "example.myshopify.com", topic, payload}, repo);
+
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+        resourceType: CatalogResourceType.COLLECTION,
+        resourceId: "gid://shopify/Collection/42",
+        occurredAt: new Date("2026-07-22T10:30:00Z"),
+        payload: canonicalJson(payload),
+        payloadHash: payloadHash(payload),
+      }));
+    },
+  );
+
+  it("falls back to a collection numeric ID and created occurrence time", async () => {
+    const repo = repository();
+    await ingestCatalogWebhook({
+      webhookId: "collection-1", shop: "example.myshopify.com", topic: "COLLECTIONS_CREATE",
+      payload: {id: 7, created_at: "2026-07-22T09:00:00Z"},
+    }, repo);
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+      resourceId: "7", occurredAt: new Date("2026-07-22T09:00:00Z"),
+    }));
+  });
+
+  it("rejects unsupported topics before persistence", async () => {
+    const repo = repository();
+    await expect(ingestCatalogWebhook({
+      webhookId: "bad", shop: "example.myshopify.com", topic: "VARIANTS_CREATE", payload: {id: 1},
+    }, repo)).rejects.toThrow("Unsupported catalog topic");
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
   it("persists authenticated data through RECEIVED and PROCESSED", async () => {
     const repo = repository();
     const result = await ingestCatalogWebhook(
@@ -95,7 +148,7 @@ describe("catalog monitor ingestion", () => {
     );
 
     expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
-      productResourceId: "42",
+      resourceId: "42",
       occurredAt: new Date("2026-07-21T10:30:00Z"),
       state: WebhookState.RECEIVED,
     }));
@@ -138,7 +191,24 @@ describe("catalog monitor ingestion", () => {
 
   it("bounds the internal diagnostic query", async () => {
     const repo = repository();
-    await queryCatalogDiagnostics("example.myshopify.com", 500, repo);
-    expect(repo.recentForShop).toHaveBeenCalledWith("example.myshopify.com", 100);
+    await queryCatalogDiagnostics("example.myshopify.com", 500, {}, repo);
+    expect(repo.recentForShop).toHaveBeenCalledWith("example.myshopify.com", 100, {});
+  });
+
+  it("passes safe resource-type and topic diagnostic filters with shop isolation", async () => {
+    const repo = repository();
+    const filters = parseCatalogDiagnosticFilters(new URLSearchParams({
+      resourceType: "COLLECTION", topic: "COLLECTIONS_UPDATE",
+    }));
+    await queryCatalogDiagnostics("one.myshopify.com", 50, filters, repo);
+    expect(repo.recentForShop).toHaveBeenCalledWith("one.myshopify.com", 50, {
+      resourceType: CatalogResourceType.COLLECTION, topic: "COLLECTIONS_UPDATE",
+    });
+  });
+
+  it("safely ignores invalid diagnostic filters", () => {
+    expect(parseCatalogDiagnosticFilters(new URLSearchParams({
+      resourceType: "INVENTORY", topic: "ORDERS_CREATE",
+    }))).toEqual({});
   });
 });

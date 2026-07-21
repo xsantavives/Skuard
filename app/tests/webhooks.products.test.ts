@@ -1,7 +1,7 @@
 import {describe, expect, it, vi} from "vitest";
 vi.mock("../shopify.server", () => ({authenticate: {webhook: vi.fn()}}));
 
-import {createProductWebhookAction} from "../services/product-webhook-handler.server";
+import {createCatalogWebhookAction} from "../services/catalog-webhook-handler.server";
 
 const authenticated = {
   payload: {id: 42},
@@ -29,7 +29,7 @@ describe("product webhook route", () => {
       order.push("persist");
       return {record: {}, duplicate: false};
     });
-    const action = createProductWebhookAction(authenticateWebhook, ingest);
+    const action = createCatalogWebhookAction(authenticateWebhook, ingest);
 
     const response = await action(actionArgs());
 
@@ -39,7 +39,7 @@ describe("product webhook route", () => {
   });
 
   it("returns 500 when persistence fails so Shopify retries", async () => {
-    const action = createProductWebhookAction(
+    const action = createCatalogWebhookAction(
       vi.fn().mockResolvedValue(authenticated),
       vi.fn().mockRejectedValue(new Error("database unavailable")),
     );
@@ -50,7 +50,7 @@ describe("product webhook route", () => {
 
   it("does not persist unsupported authenticated topics", async () => {
     const ingest = vi.fn();
-    const action = createProductWebhookAction(
+    const action = createCatalogWebhookAction(
       vi.fn().mockResolvedValue({...authenticated, topic: "APP_UNINSTALLED"}),
       ingest,
     );
@@ -59,4 +59,17 @@ describe("product webhook route", () => {
     expect(response.status).toBe(400);
     expect(ingest).not.toHaveBeenCalled();
   });
+});
+
+describe("collection webhook route", () => {
+  it.each(["COLLECTIONS_CREATE", "COLLECTIONS_UPDATE", "COLLECTIONS_DELETE"])(
+    "authenticates and ingests %s successfully, including duplicate deliveries",
+    async (topic) => {
+      const delivery = {...authenticated, webhookId: `collection-${topic}`, topic};
+      const ingest = vi.fn().mockResolvedValue({record: {}, duplicate: true});
+      const action = createCatalogWebhookAction(vi.fn().mockResolvedValue(delivery), ingest);
+      expect((await action(actionArgs())).status).toBe(200);
+      expect(ingest).toHaveBeenCalledWith(delivery);
+    },
+  );
 });
