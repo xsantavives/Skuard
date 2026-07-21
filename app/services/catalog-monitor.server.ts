@@ -1,6 +1,9 @@
-import {createHash} from "node:crypto";
 import {CatalogResourceType, Prisma, WebhookState, type CatalogWebhook} from "@prisma/client";
 import {prisma} from "../db.server";
+import {canonicalJson, hashCanonicalPayload, type JsonValue} from "./catalog-json.server";
+import {snapshotDataFromWebhook} from "./catalog-snapshot.server";
+
+export {canonicalJson, hashCanonicalPayload, payloadHash, type JsonValue} from "./catalog-json.server";
 
 export const PRODUCT_TOPICS = ["PRODUCTS_CREATE", "PRODUCTS_UPDATE", "PRODUCTS_DELETE"] as const;
 export const COLLECTION_TOPICS = ["COLLECTIONS_CREATE", "COLLECTIONS_UPDATE", "COLLECTIONS_DELETE"] as const;
@@ -13,12 +16,10 @@ export function resourceTypeForTopic(topic: string): CatalogResourceType | undef
   return undefined;
 }
 
-export type JsonValue = null | boolean | number | string | JsonValue[] | {[key: string]: JsonValue | undefined};
-
 export interface CatalogWebhookRepository {
   create(data: Prisma.CatalogWebhookCreateInput): Promise<CatalogWebhook>;
   findByWebhookId(webhookId: string): Promise<CatalogWebhook | null>;
-  markProcessed(id: string): Promise<CatalogWebhook>;
+  createSnapshotAndMarkProcessed(record: CatalogWebhook): Promise<CatalogWebhook>;
   markFailed(id: string, error: string): Promise<CatalogWebhook>;
   recentForShop(shop: string, limit: number, filters?: CatalogDiagnosticFilters): Promise<CatalogWebhook[]>;
 }
@@ -31,34 +32,17 @@ export interface CatalogDiagnosticFilters {
 const prismaRepository: CatalogWebhookRepository = {
   create: (data) => prisma.catalogWebhook.create({data}),
   findByWebhookId: (webhookId) => prisma.catalogWebhook.findUnique({where: {webhookId}}),
-  markProcessed: (id) =>
-    prisma.catalogWebhook.update({
-      where: {id},
-      data: {state: WebhookState.PROCESSED, processedAt: new Date(), error: null},
-    }),
+  createSnapshotAndMarkProcessed: (record) => prisma.$transaction(async (tx) => {
+    await tx.catalogSnapshot.create({data: snapshotDataFromWebhook(record)});
+    return tx.catalogWebhook.update({
+      where: {id: record.id}, data: {state: WebhookState.PROCESSED, processedAt: new Date(), error: null},
+    });
+  }),
   markFailed: (id, error) =>
     prisma.catalogWebhook.update({where: {id}, data: {state: WebhookState.FAILED, error}}),
   recentForShop: (shop, limit, filters = {}) =>
     prisma.catalogWebhook.findMany({where: {shop, ...filters}, orderBy: {receivedAt: "desc"}, take: limit}),
 };
-
-export function canonicalJson(value: JsonValue): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  return `{${Object.keys(value)
-    .filter((key) => value[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] as JsonValue)}`)
-    .join(",")}}`;
-}
-
-export function payloadHash(payload: JsonValue) {
-  return hashCanonicalPayload(canonicalJson(payload));
-}
-
-export function hashCanonicalPayload(payload: string) {
-  return createHash("sha256").update(payload).digest("hex");
-}
 
 function optionalString(value: unknown) {
   return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
@@ -100,11 +84,19 @@ export async function ingestCatalogWebhook(
     if (!isUniqueConflict(error)) throw error;
     const duplicate = await repository.findByWebhookId(input.webhookId);
     if (!duplicate) throw error;
-    return {record: duplicate, duplicate: true};
+    if (duplicate.state === WebhookState.PROCESSED) return {record: duplicate, duplicate: true};
+    try {
+      record = await repository.createSnapshotAndMarkProcessed(duplicate);
+      return {record, duplicate: true};
+    } catch (retryError) {
+      const message = retryError instanceof Error ? retryError.message : "Unknown processing failure";
+      await repository.markFailed(duplicate.id, message).catch(() => undefined);
+      throw retryError;
+    }
   }
 
   try {
-    record = await repository.markProcessed(record.id);
+    record = await repository.createSnapshotAndMarkProcessed(record);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown processing failure";
     await repository.markFailed(record.id, message).catch(() => undefined);

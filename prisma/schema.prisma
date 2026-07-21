@@ -50,7 +50,30 @@ model CatalogWebhook {
   error             String?
   receivedAt        DateTime     @default(now())
   processedAt       DateTime?
+  snapshot          CatalogSnapshot?
 
   @@index([shop, receivedAt])
   @@index([shop, resourceType, receivedAt])
+}
+
+model CatalogSnapshot {
+  id              String              @id @default(cuid())
+  shop            String
+  resourceType    CatalogResourceType
+  resourceId      String
+  sourceWebhookId String              @unique
+  sourceTopic     String
+  state           String
+  stateHash       String
+  isDeleted       Boolean
+  occurredAt      DateTime?
+  receivedAt      DateTime
+  createdAt       DateTime            @default(now())
+  sourceWebhook   CatalogWebhook      @relation(fields: [sourceWebhookId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([shop, resourceType, resourceId, receivedAt])
+  @@index([shop, receivedAt])
+  @@index([shop, resourceType, receivedAt])
+  @@index([shop, sourceTopic, receivedAt])
+  @@index([shop, isDeleted, receivedAt])
 }

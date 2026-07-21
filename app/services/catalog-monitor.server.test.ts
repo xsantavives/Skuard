@@ -31,7 +31,7 @@ function repository(overrides: Partial<CatalogWebhookRepository> = {}): CatalogW
   return {
     create: vi.fn().mockResolvedValue(event()),
     findByWebhookId: vi.fn().mockResolvedValue(null),
-    markProcessed: vi.fn().mockResolvedValue(event({state: WebhookState.PROCESSED})),
+    createSnapshotAndMarkProcessed: vi.fn().mockResolvedValue(event({state: WebhookState.PROCESSED})),
     markFailed: vi.fn().mockResolvedValue(event({state: WebhookState.FAILED})),
     recentForShop: vi.fn().mockResolvedValue([]),
     ...overrides,
@@ -152,7 +152,7 @@ describe("catalog monitor ingestion", () => {
       occurredAt: new Date("2026-07-21T10:30:00Z"),
       state: WebhookState.RECEIVED,
     }));
-    expect(repo.markProcessed).toHaveBeenCalledWith("event-1");
+    expect(repo.createSnapshotAndMarkProcessed).toHaveBeenCalledWith(expect.objectContaining({id: "event-1"}));
     expect(result.duplicate).toBe(false);
   });
 
@@ -173,14 +173,31 @@ describe("catalog monitor ingestion", () => {
     );
 
     expect(result).toEqual({record: duplicate, duplicate: true});
-    expect(repo.markProcessed).not.toHaveBeenCalled();
+    expect(repo.createSnapshotAndMarkProcessed).not.toHaveBeenCalled();
     expect(repo.create).toHaveBeenCalledOnce();
     expect(result.record.payload).toBe('{"id":42,"title":"Original"}');
   });
 
+  it("retries snapshot projection for a duplicate delivery whose prior lifecycle failed", async () => {
+    const failed = event({state: WebhookState.FAILED});
+    const processed = event({state: WebhookState.PROCESSED});
+    const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", {code: "P2002", clientVersion: "test"});
+    const repo = repository({
+      create: vi.fn().mockRejectedValue(conflict), findByWebhookId: vi.fn().mockResolvedValue(failed),
+      createSnapshotAndMarkProcessed: vi.fn().mockResolvedValue(processed),
+    });
+
+    const result = await ingestCatalogWebhook(
+      {webhookId: failed.webhookId, shop: failed.shop, topic: failed.topic, payload: {id: 42}}, repo,
+    );
+
+    expect(repo.createSnapshotAndMarkProcessed).toHaveBeenCalledWith(failed);
+    expect(result).toEqual({record: processed, duplicate: true});
+  });
+
   it("marks a received record FAILED and propagates processing persistence errors", async () => {
     const failure = new Error("database unavailable");
-    const repo = repository({markProcessed: vi.fn().mockRejectedValue(failure)});
+    const repo = repository({createSnapshotAndMarkProcessed: vi.fn().mockRejectedValue(failure)});
 
     await expect(ingestCatalogWebhook(
       {webhookId: "webhook-1", shop: "example.myshopify.com", topic: "PRODUCTS_CREATE", payload: {id: 1}},
