@@ -1,11 +1,7 @@
 import "@shopify/shopify-app-react-router/adapters/node";
 import {ApiVersion, AppDistribution, shopifyApp} from "@shopify/shopify-app-react-router/server";
 import {PrismaSessionStorage} from "@shopify/shopify-app-session-storage-prisma";
-import {PrismaClient} from "@prisma/client";
-
-const globalForPrisma = globalThis as unknown as {prisma?: PrismaClient};
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+import {prisma} from "./db.server";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY ?? "",

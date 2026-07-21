@@ -2,18 +2,19 @@
 
 > Skuard is the observability layer for Shopify catalog operations.
 
-This repository contains **SKU-001 — Shopify Foundation**: a minimal embedded Shopify app built with the official React Router architecture, TypeScript, npm, Prisma session storage, and the GraphQL Admin API toolchain. This slice establishes the application shell only. **It does not monitor catalog changes yet.**
+This repository preserves **SKU-001 — Shopify Foundation** and adds **SKU-002 — Monitor Foundation**, the first, Observe-only catalog monitoring slice. The app uses the official React Router architecture, TypeScript, npm, Prisma session storage, and the GraphQL Admin API toolchain.
 
 ## Current scope
 
 - Embedded Shopify admin application named Skuard.
 - OAuth/session foundation backed by Prisma and local SQLite.
 - A single read-only Shopify scope: `read_products`.
-- Minimal, honest foundation screen.
+- Authenticated, idempotent observation of product and collection create, update, and delete webhooks.
+- An authenticated `/app/diagnostics` route for internal operational inspection only.
 - Type checking, linting, tests, and production-bundle validation through one quality gate.
 - Shopify lifecycle webhooks required to maintain app sessions and granted-scope state.
 
-SKU-001 deliberately contains no snapshots, events, diffs, incidents, timeline, blast radius, mutations, rollback, auto-revert, policies, billing, AI, inventory, orders, customers, or ERP/PIM/pricing integrations. No Skuard domain models are present.
+The roadmap is **Observe → Understand → Detect → Recovery planning → Controlled recovery → Optional automation**. SKU-002 belongs only to Observe: it retains each complete authenticated webhook payload as canonical JSON but adds no semantic interpretation, merchant timeline, normalized snapshots, batch detection, blast radius, incidents, policies, alerts, recovery, billing, AI, automation, Shopify write scope, or Shopify write operation. Payload retention is an ingestion capability, not a product snapshot or timeline.
 
 ## Prerequisites
 
@@ -57,7 +58,7 @@ Review the generated/local configuration before accepting changes; never commit 
 3. Run `npm run dev`, select the development store, and follow the install URL printed by Shopify CLI.
 4. Approve the single `read_products` permission. The app opens embedded in Shopify Admin.
 
-The landing screen confirms that foundation initialization is complete; catalog monitoring arrives in a later slice.
+The landing screen remains intentionally minimal. `/app/diagnostics` is an internal diagnostic surface, not a merchant-facing timeline.
 
 ## Commands
 
@@ -68,15 +69,15 @@ The landing screen confirms that foundation initialization is complete; catalog 
 | `npm run build` | Produce the React Router server/client bundle. |
 | `npm run typecheck` | Generate route types and run strict TypeScript checks. |
 | `npm run lint` | Run ESLint. |
-| `npm test` | Run foundation tests once with Vitest. |
+| `npm test` | Run the test suite once with Vitest. |
 | `npm run check` | Run typecheck, lint, tests, and build in sequence. |
 | `npm start` | Serve a previously built production bundle. |
 
 Always use `npm run check` as the repository quality gate before pushing.
 
-## Prisma and sessions
+## Prisma persistence
 
-`prisma/schema.prisma` contains only Shopify's required `Session` model. The initial migration creates that table. Do not introduce Skuard business entities until their owning product slice. For a clean local database, delete `prisma/dev.sqlite` and rerun `npm run setup`.
+`prisma/schema.prisma` retains Shopify's required `Session` model and adds `CatalogWebhook`. The webhook ID is unique for idempotency; records include the complete authenticated payload as parseable canonical JSON, a SHA-256 hash calculated from that exact string, optional product resource ID and occurrence time, and `RECEIVED`, `PROCESSED`, or `FAILED` state. For a clean local database, delete `prisma/dev.sqlite` and rerun `npm run setup`.
 
 ## Troubleshooting
 
@@ -90,6 +91,19 @@ Always use `npm run check` as the repository quality gate before pushing.
 
 The repository initially contained only this README. The official Shopify CLI/template endpoints were attempted first, but this execution environment rejected npm and GitHub access with HTTP 403. The foundation therefore mirrors the current official Shopify React Router template structure rather than claiming a successful CLI generation. Run `npm install && npm run setup && npm run check` in a network-enabled environment to materialize dependencies and verify the exact resolved toolchain.
 
-## Next slice
+## Monitor behavior
 
-**SKU-002 — Monitor Foundation** will introduce the first catalog-observability primitives. Until then, this application performs no monitoring and makes no Shopify mutations.
+Every catalog route calls `authenticate.webhook` before the shared ingestion service. Duplicate webhook IDs return success without creating another record. Persistence failure returns HTTP 500 so Shopify can retry. The application makes no Shopify mutations and retains `read_products` as its only scope.
+
+### Catalog coverage matrix
+
+| Resource | Create | Update | Delete |
+| --- | --- | --- | --- |
+| `PRODUCT` | `products/create` | `products/update` | `products/delete` |
+| `COLLECTION` | `collections/create` | `collections/update` | `collections/delete` |
+
+Product update payloads retain the product and variant data delivered by Shopify; SKU-003 does not add
+separate variant webhook handling. Collection updates retain Shopify's collection update payloads,
+including supported manual membership and rule changes, without interpreting their business meaning.
+Inventory, publications, metafields, scheduled reconciliation, snapshots, semantic diffs, detection,
+and recovery remain excluded.
