@@ -10,3 +10,5 @@ node_modules
 .DS_Store
 /prisma/dev.sqlite
 /prisma/dev.sqlite-journal
+
+/.react-router

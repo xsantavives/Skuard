@@ -7,7 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Shopify's session record. Domain models belong to a later product slice.
 model Session {
   id            String    @id
   shop          String
@@ -24,4 +23,27 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
+}
+
+enum WebhookState {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+model CatalogWebhook {
+  id                String       @id @default(cuid())
+  webhookId         String       @unique
+  shop              String
+  topic             String
+  payload           String
+  payloadHash       String
+  productResourceId String?
+  occurredAt        DateTime?
+  state             WebhookState @default(RECEIVED)
+  error             String?
+  receivedAt        DateTime     @default(now())
+  processedAt       DateTime?
+
+  @@index([shop, receivedAt])
 }
