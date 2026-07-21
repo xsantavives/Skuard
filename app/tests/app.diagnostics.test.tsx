@@ -33,4 +33,20 @@ describe("catalog diagnostics", () => {
     expect(html).not.toContain("raw payload must remain internal");
     expect(html).not.toContain(event.payload);
   });
+
+  it("renders bounded snapshot metadata without rendering canonical state or webhook payload", () => {
+    const snapshot = {
+      id: "snapshot-1", shop: event.shop, resourceType: CatalogResourceType.COLLECTION,
+      resourceId: event.resourceId!, sourceWebhookId: event.id, sourceTopic: event.topic,
+      state: '{"private":"snapshot state must remain internal"}', stateHash: "snapshot-hash",
+      isDeleted: true, occurredAt: null, receivedAt: event.receivedAt,
+      createdAt: new Date("2026-07-22T12:00:02Z"),
+    };
+    const html = renderToStaticMarkup(<DiagnosticsView events={[event]} snapshots={[snapshot]} />);
+    expect(html).toContain("Immutable catalog snapshots");
+    expect(html).toContain("snapshot-hash");
+    expect(html).toContain("yes");
+    expect(html).not.toContain("snapshot state must remain internal");
+    expect(html).not.toContain("raw payload must remain internal");
+  });
 });

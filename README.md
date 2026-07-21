@@ -94,3 +94,13 @@ The repository initially contained only this README. The official Shopify CLI/te
 ## Monitor behavior
 
 Every catalog route calls `authenticate.webhook` before the shared ingestion service. Duplicate webhook IDs return success without creating another record. Persistence failure returns HTTP 500 so Shopify can retry. The application makes no Shopify mutations and retains `read_products` as its only scope.
+
+## SKU-004 catalog snapshots
+
+`CatalogWebhook` remains the immutable raw authenticated transport evidence. `CatalogSnapshot` is a separate, immutable deterministic projection created from that retained evidence after deployment: one source webhook can create zero or one snapshot, enforced by a unique relationship.
+
+For product and collection create/update topics, the snapshot state is the complete payload in canonical JSON and `isDeleted` is false. For delete topics, the complete authenticated delete payload is retained unchanged in meaning as canonical tombstone state and `isDeleted` is true; no absent fields are invented. In every case, `stateHash` is SHA-256 of the exact canonical string stored in `state`. Projection never fetches Shopify data, merges prior state, or mutates a snapshot.
+
+Coverage is limited to product and collection create, update, and delete webhooks. The authenticated internal diagnostics section is shop-scoped, bounded, filterable, and displays snapshot metadata only—not state or raw webhook payloads.
+
+Snapshots begin with webhooks processed after SKU-004 deployment. Historical `CatalogWebhook` evidence remains retained, but historical backfill is outside this slice. SKU-004 also excludes comparison and diffing, changed-field extraction, mutable current state, merchant timelines, policies, incidents, alerts, reconciliation or polling, Admin API fetching, variants/inventory/publications/metafields as separate snapshots, recovery, billing, AI, automation, write scopes, mutations, and all Shopify writes.

@@ -2,20 +2,29 @@ import type {LoaderFunctionArgs} from "react-router";
 import {useLoaderData} from "react-router";
 import {authenticate} from "../shopify.server";
 import {parseCatalogDiagnosticFilters, queryCatalogDiagnostics} from "../services/catalog-monitor.server";
+import {parseSnapshotDiagnosticFilters, querySnapshotDiagnostics} from "../services/catalog-snapshot.server";
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
   const {session} = await authenticate.admin(request);
   const filters = parseCatalogDiagnosticFilters(new URL(request.url).searchParams);
-  return {events: await queryCatalogDiagnostics(session.shop, 50, filters)};
+  const snapshotFilters = parseSnapshotDiagnosticFilters(new URL(request.url).searchParams);
+  const [events, snapshots] = await Promise.all([
+    queryCatalogDiagnostics(session.shop, 50, filters), querySnapshotDiagnostics(session.shop, 50, snapshotFilters),
+  ]);
+  return {events, snapshots};
 };
 
 export default function Diagnostics() {
   const {events} = useLoaderData<typeof loader>();
 
-  return <DiagnosticsView events={events} />;
+  const {snapshots} = useLoaderData<typeof loader>();
+  return <DiagnosticsView events={events} snapshots={snapshots} />;
 }
 
-export function DiagnosticsView({events}: {events: Awaited<ReturnType<typeof loader>>["events"]}) {
+export function DiagnosticsView({events, snapshots = []}: {
+  events: Awaited<ReturnType<typeof loader>>["events"];
+  snapshots?: Awaited<ReturnType<typeof loader>>["snapshots"];
+}) {
 
   return (
     <main>
@@ -35,6 +44,18 @@ export function DiagnosticsView({events}: {events: Awaited<ReturnType<typeof loa
           ))}
         </tbody>
       </table>
+      <section>
+        <h2>Immutable catalog snapshots</h2>
+        <table>
+          <thead><tr><th>Resource type</th><th>Resource ID</th><th>Source topic</th><th>Deleted</th><th>Occurred</th><th>Received</th><th>Created</th><th>State hash</th></tr></thead>
+          <tbody>{snapshots.map((snapshot) => <tr key={snapshot.id}>
+            <td>{snapshot.resourceType}</td><td>{snapshot.resourceId}</td><td>{snapshot.sourceTopic}</td>
+            <td>{snapshot.isDeleted ? "yes" : "no"}</td><td>{snapshot.occurredAt?.toISOString() ?? "—"}</td>
+            <td>{snapshot.receivedAt.toISOString()}</td><td>{snapshot.createdAt.toISOString()}</td>
+            <td><code>{snapshot.stateHash}</code></td>
+          </tr>)}</tbody>
+        </table>
+      </section>
     </main>
   );
 }
