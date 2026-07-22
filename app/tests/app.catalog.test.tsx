@@ -53,6 +53,8 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("Other: 1"); expect(html).toContain("/variants/0/price"); expect(html).toContain("Before");
     expect(html).toContain("Detected signals"); expect(html).toContain("Product title changed: 1");
     expect(html).toContain("Variant price changed: 1"); expect(html).toContain("Product content");
+    expect(html).toContain("Comparison findings"); expect(html).toContain("Product identity fields changed");
+    expect(html).toContain("Variant pricing fields changed"); expect(html).toContain("Evidence count");
     expect(html).toContain('data-value-kind="null"'); expect(html).not.toContain("secondary-hash"); expect(html).not.toContain("payload");
     for (const excluded of ["severity", "risk", "incident", "recommendation", "recovery", "state hash", "shop identifier"])
       expect(html.toLowerCase()).not.toContain(excluded);
@@ -66,6 +68,8 @@ describe("merchant catalog routes", () => {
     const truncated = renderRoute(<CatalogDiffView diff={{...base, currentAction: "UPDATED", status: "LIMIT_EXCEEDED", truncated: true}} />);
     expect(truncated).toContain("Results are truncated"); expect(truncated).toContain("Signals are based only on the returned structural changes");
     expect(truncated).toContain("No deterministic signals matched the returned structural changes");
+    expect(truncated).toContain("Findings are based only on the returned structural changes because the comparison was truncated.");
+    expect(truncated).toContain("No deterministic comparison findings matched the returned signals.");
   });
 
   it("renders collection categories, exact paths, and bounded values", () => {

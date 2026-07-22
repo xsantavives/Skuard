@@ -138,3 +138,9 @@ The category summary counts only returned entries in a fixed taxonomy order, so 
 SKU-008 is the first constrained **Detect** slice. Explicit, deterministic signals are calculated on demand only from the structural diff entries already returned by the bounded comparison. Allow-listed matching uses the resource type and SKU-007's valid, normalized JSON Pointer path semantics; the original exact path, operation, and raw JSON-compatible before/after values remain the evidence. Unmatched structural changes remain visible, and system metadata and unknown fields do not automatically create signals.
 
 Signals and their fixed-order summaries are not persisted. Structural truncation therefore also limits signal completeness, and positional array evidence remains identity-unaware. This slice introduces no severity, risk, score, confidence, anomaly, policy, incident, alert, notification, recovery, AI, or automation.
+
+## SKU-009 deterministic comparison findings
+
+SKU-009 remains inside **Detect**. Factual findings are calculated on demand from the returned deterministic signals and summarize explicit signal families and combinations without inspecting snapshot state, structural paths, or raw values. Evidence counts refer only to returned signals; structural truncation therefore limits findings completeness.
+
+Findings are not persisted and no historical analysis exists. This slice introduces no severity, risk, score, confidence, anomaly, policy, incident, alert, notification, recommendation, recovery, AI, or automation.
