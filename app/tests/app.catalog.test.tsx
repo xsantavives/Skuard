@@ -5,12 +5,15 @@ import {createRoutesStub} from "react-router";
 import {describe, expect, it, vi} from "vitest";
 vi.mock("../shopify.server", () => ({authenticate: {admin: vi.fn()}}));
 import {CatalogTimelineView} from "../routes/app.catalog";
-import {CatalogDiffView, CatalogResourceHistoryView} from "../routes/app.catalog.$resourceType.$resourceId";
+import {CatalogDiffView, CatalogResourceHistoryView, HistoricalFindingsView} from "../routes/app.catalog.$resourceType.$resourceId";
 
 const entry = {id: "snapshot-1", resourceType: CatalogResourceType.PRODUCT, resourceId: "gid://shopify/Product/1?private=x",
   action: "DELETED" as const, sourceTopic: "PRODUCTS_DELETE" as const, isDeleted: true,
   occurredAt: null, receivedAt: new Date("2026-07-24T12:00:00Z"), createdAt: new Date("2026-07-24T12:00:01Z"),
   stateHash: "secondary-hash"};
+const emptySummary = {resourceType: CatalogResourceType.PRODUCT, resourceId: entry.resourceId,
+  requestedComparisonLimit: 10, snapshotCount: 1, adjacentPairCount: 0, comparablePairCount: 0, skippedPairCount: 0,
+  truncatedComparisonCount: 0, findings: [], occurrences: [], historyExhausted: true};
 
 function renderRoute(element: ReactNode) {
   const Stub = createRoutesStub([{path: "/", Component: () => element}]);
@@ -32,10 +35,22 @@ describe("merchant catalog routes", () => {
 
   it("renders resource identity, derived status, tombstone history, and back navigation", () => {
     const html = renderRoute(<CatalogResourceHistoryView history={{resourceType: CatalogResourceType.PRODUCT,
-      resourceId: entry.resourceId, status: "DELETED", entries: [entry]}} />);
+      resourceId: entry.resourceId, status: "DELETED", entries: [entry]}} historicalFindings={emptySummary} />);
     expect(html).toContain("Product history"); expect(html).toContain("Current status:"); expect(html).toContain("Deleted");
     expect(html).toContain("Deletion tombstone"); expect(html).toContain("Back to catalog activity"); expect(html).not.toContain("secondary-hash");
     expect(html).toContain("View changes");
+  });
+
+  it("renders bounded historical findings, qualifications, counts, and neutral empty states", () => {
+    const html = renderRoute(<HistoricalFindingsView summary={{...emptySummary, snapshotCount: 11, adjacentPairCount: 10,
+      comparablePairCount: 7, skippedPairCount: 3, truncatedComparisonCount: 2, historyExhausted: false,
+      findings: [{code: "VARIANT_PRICING_CHANGED", label: "Variant pricing fields changed", comparisonCount: 3, evidenceCount: 5}]}} />);
+    expect(html).toContain("Recent historical findings"); expect(html).toContain("most recent 10 adjacent comparisons");
+    expect(html).toContain("Older catalog history was not analyzed"); expect(html).toContain("3 of 7"); expect(html).toContain(">5<");
+    expect(html).toContain("2 analyzed comparisons were structurally truncated; their findings may be incomplete.");
+    expect(renderRoute(<HistoricalFindingsView summary={emptySummary} />)).toContain("No comparable updates were available");
+    expect(renderRoute(<HistoricalFindingsView summary={{...emptySummary, comparablePairCount: 1, adjacentPairCount: 1}} />))
+      .toContain("No deterministic findings matched");
   });
 
   it("renders changed paths, labels, bounded values, null, and missing without private state", () => {

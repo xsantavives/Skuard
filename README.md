@@ -144,3 +144,9 @@ Signals and their fixed-order summaries are not persisted. Structural truncation
 SKU-009 remains inside **Detect**. Factual findings are calculated on demand from the returned deterministic signals and summarize explicit signal families and combinations without inspecting snapshot state, structural paths, or raw values. Evidence counts refer only to returned signals; structural truncation therefore limits findings completeness.
 
 Findings are not persisted and no historical analysis exists. This slice introduces no severity, risk, score, confidence, anomaly, policy, incident, alert, notification, recommendation, recovery, AI, or automation.
+
+## SKU-010 bounded historical finding summary
+
+SKU-010 remains inside **Detect**. Recent historical findings are calculated on demand for one exact authenticated-shop-scoped resource from a separately bounded snapshot window. Only adjacent snapshots in the established timeline order are candidate comparisons, and lifecycle eligibility matches the structural diff: invalid data, creations, tombstones, and updates immediately after tombstones fail closed without bypassing a snapshot.
+
+The factual summary counts comparable comparisons separately from their returned signal evidence. Structural comparison, signal derivation, and finding derivation are reused unchanged; structurally truncated comparisons remain counted but may produce incomplete findings. Results and occurrences are not persisted, and there is no historical background processing. This slice adds no anomaly, threshold, policy, incident, alert, recommendation, recovery, AI, automation, Shopify fetch, mutation, or scope.

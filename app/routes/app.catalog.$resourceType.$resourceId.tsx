@@ -6,17 +6,21 @@ import {classifyCatalogDiffEntry, summarizeCatalogChangeClassifications} from ".
 import {deriveCatalogChangeSignals, summarizeCatalogChangeSignals} from "../services/catalog-change-signals";
 import {deriveCatalogComparisonFindings} from "../services/catalog-comparison-findings";
 import {queryCatalogStructuralDiff, type CatalogStructuralDiff} from "../services/catalog-diff.server";
+import {queryCatalogFindingHistory, type CatalogHistoricalFindingSummary} from "../services/catalog-finding-history.server";
 import {queryCatalogResourceHistory, type CatalogResourceHistory} from "../services/catalog-timeline.server";
 
 export const loader = async ({request, params}: LoaderFunctionArgs) => {
   const {session} = await authenticate.admin(request);
   const resourceType = params.resourceType ?? ""; const resourceId = params.resourceId ?? "";
-  const history = await queryCatalogResourceHistory(session.shop, resourceType, resourceId);
-  if (!history) throw new Response("Catalog resource not found", {status: 404});
+  const [history, historicalFindings] = await Promise.all([
+    queryCatalogResourceHistory(session.shop, resourceType, resourceId),
+    queryCatalogFindingHistory(session.shop, resourceType, resourceId),
+  ]);
+  if (!history || !historicalFindings) throw new Response("Catalog resource not found", {status: 404});
   const snapshotId = new URL(request.url).searchParams.get("snapshot");
   const diff = snapshotId ? await queryCatalogStructuralDiff(session.shop, resourceType, resourceId, snapshotId) : undefined;
   if (snapshotId && !diff) throw new Response("Catalog snapshot not found", {status: 404});
-  return {history, diff};
+  return {history, historicalFindings, diff};
 };
 
 const labels = {CREATED: "Created", UPDATED: "Updated", DELETED: "Deleted"} as const;
@@ -92,13 +96,38 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
   </section>;
 }
 
-export function CatalogResourceHistoryView({history, diff}: {history: CatalogResourceHistory; diff?: CatalogStructuralDiff}) {
+export function HistoricalFindingsView({summary}: {summary: CatalogHistoricalFindingSummary}) {
+  const truncated = summary.truncatedComparisonCount;
+  return <section aria-labelledby="historical-findings-heading">
+    <h2 id="historical-findings-heading">Recent historical findings</h2>
+    <p>Historical findings are based on the most recent {summary.requestedComparisonLimit} adjacent comparisons.</p>
+    {!summary.historyExhausted ? <p>Older catalog history was not analyzed in this summary.</p> : null}
+    <dl>
+      <dt>Snapshots considered</dt><dd>{summary.snapshotCount}</dd>
+      <dt>Adjacent comparisons examined</dt><dd>{summary.adjacentPairCount}</dd>
+      <dt>Comparable updates</dt><dd>{summary.comparablePairCount}</dd>
+      <dt>Non-comparable pairs</dt><dd>{summary.skippedPairCount}</dd>
+      <dt>Structurally truncated comparisons</dt><dd>{truncated}</dd>
+    </dl>
+    {truncated > 0 ? <p>{truncated} analyzed {truncated === 1 ? "comparison was" : "comparisons were"} structurally truncated; {truncated === 1 ? "its" : "their"} findings may be incomplete.</p> : null}
+    {summary.comparablePairCount === 0 ? <p>No comparable updates were available in the analyzed snapshot window.</p> :
+      summary.findings.length === 0 ? <p>No deterministic findings matched the analyzed comparable updates.</p> : <table>
+        <thead><tr><th>Finding</th><th>Comparisons observed</th><th>Evidence signals</th></tr></thead>
+        <tbody>{summary.findings.map((finding) => <tr key={finding.code}><td>{finding.label}</td>
+          <td>{finding.comparisonCount} of {summary.comparablePairCount}</td><td>{finding.evidenceCount}</td></tr>)}</tbody>
+      </table>}
+  </section>;
+}
+
+export function CatalogResourceHistoryView({history, historicalFindings, diff}: {history: CatalogResourceHistory;
+  historicalFindings: CatalogHistoricalFindingSummary; diff?: CatalogStructuralDiff}) {
   return <main>
     <p><Link to="/app/catalog">← Back to catalog activity</Link></p>
     <h1>{history.resourceType === "PRODUCT" ? "Product" : "Collection"} history</h1>
     <p><strong>Resource ID:</strong> {history.resourceId}</p>
     <p><strong>Current status:</strong> {history.status === "ACTIVE" ? "Active" : "Deleted"}</p>
     {diff ? <CatalogDiffView diff={diff} /> : null}
+    <HistoricalFindingsView summary={historicalFindings} />
     <h2>Event history</h2>
     <ol>{history.entries.map((entry) => <li key={entry.id}>
       <strong>{labels[entry.action]}</strong>{" — "}
@@ -110,11 +139,13 @@ export function CatalogResourceHistoryView({history, diff}: {history: CatalogRes
 }
 
 export default function CatalogResourceHistoryRoute() {
-  const {history, diff} = useLoaderData<typeof loader>();
+  const {history, historicalFindings, diff} = useLoaderData<typeof loader>();
   const hydratedHistory = {...history, entries: history.entries.map((entry) => ({...entry,
     occurredAt: entry.occurredAt ? new Date(entry.occurredAt) : null, receivedAt: new Date(entry.receivedAt),
     createdAt: new Date(entry.createdAt)}))};
   const hydratedDiff = diff ? {...diff, currentEffectiveAt: new Date(diff.currentEffectiveAt),
     previousEffectiveAt: diff.previousEffectiveAt ? new Date(diff.previousEffectiveAt) : undefined} : undefined;
-  return <CatalogResourceHistoryView history={hydratedHistory} diff={hydratedDiff} />;
+  const hydratedFindings = {...historicalFindings, occurrences: historicalFindings.occurrences.map((occurrence) => ({...occurrence,
+    currentEffectiveAt: new Date(occurrence.currentEffectiveAt), previousEffectiveAt: new Date(occurrence.previousEffectiveAt)}))};
+  return <CatalogResourceHistoryView history={hydratedHistory} historicalFindings={hydratedFindings} diff={hydratedDiff} />;
 }

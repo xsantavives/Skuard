@@ -91,13 +91,14 @@ export function snapshotBeforeSql(entry: CatalogTimelineCursor) {
 }
 
 // Newest first: effective event time, receivedAt, createdAt, then snapshot ID.
-export function compareTimelineEntries(a: CatalogTimelineEntry, b: CatalogTimelineEntry) {
+export function compareTimelineEntries(a: Pick<CatalogTimelineEntry, "id" | "occurredAt" | "receivedAt" | "createdAt">,
+  b: Pick<CatalogTimelineEntry, "id" | "occurredAt" | "receivedAt" | "createdAt">) {
   const valuesA = [effectiveEventTime(a).valueOf(), a.receivedAt.valueOf(), a.createdAt.valueOf()];
   const valuesB = [effectiveEventTime(b).valueOf(), b.receivedAt.valueOf(), b.createdAt.valueOf()];
   for (let index = 0; index < valuesA.length; index += 1) {
     if (valuesA[index] !== valuesB[index]) return valuesB[index]! - valuesA[index]!;
   }
-  return b.id.localeCompare(a.id);
+  return a.id === b.id ? 0 : a.id < b.id ? 1 : -1;
 }
 
 function boundedLimit(limit?: number) {
