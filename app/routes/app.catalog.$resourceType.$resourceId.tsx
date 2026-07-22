@@ -4,6 +4,7 @@ import {authenticate} from "../shopify.server";
 import {renderDiffValue} from "../services/catalog-diff-renderer";
 import {classifyCatalogDiffEntry, summarizeCatalogChangeClassifications} from "../services/catalog-change-taxonomy";
 import {deriveCatalogChangeSignals, summarizeCatalogChangeSignals} from "../services/catalog-change-signals";
+import {deriveCatalogComparisonFindings} from "../services/catalog-comparison-findings";
 import {queryCatalogStructuralDiff, type CatalogStructuralDiff} from "../services/catalog-diff.server";
 import {queryCatalogResourceHistory, type CatalogResourceHistory} from "../services/catalog-timeline.server";
 
@@ -35,6 +36,8 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
   const summary = summarizeCatalogChangeClassifications(diff.resourceType, diff.entries);
   const signals = deriveCatalogChangeSignals(diff.resourceType, diff.entries);
   const signalSummary = summarizeCatalogChangeSignals(signals);
+  const findings = deriveCatalogComparisonFindings(diff.resourceType, signals, {truncated: diff.truncated});
+  const signalLabels = new Map(signals.map((signal) => [signal.code, signal.label]));
   return <section aria-labelledby="changes-heading">
     <h2 id="changes-heading">Structural changes</h2>
     <p><strong>Action:</strong> {labels[diff.currentAction]}</p>
@@ -75,6 +78,15 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
             })}</tbody>
           </table>
         </>}
+      </section>
+      <section aria-labelledby="findings-heading">
+        <h3 id="findings-heading">Comparison findings</h3>
+        {diff.truncated ? <p>Findings are based only on the returned structural changes because the comparison was truncated.</p> : null}
+        {!findings.length ? <p>No deterministic comparison findings matched the returned signals.</p> : <table>
+          <thead><tr><th>Finding</th><th>Evidence signals</th><th>Evidence count</th></tr></thead>
+          <tbody>{findings.map((finding) => <tr key={finding.code}><td>{finding.label}</td>
+            <td>{finding.evidenceSignalCodes.map((code) => signalLabels.get(code)).join(", ")}</td><td>{finding.evidenceCount}</td></tr>)}</tbody>
+        </table>}
       </section>
     </>}
   </section>;
