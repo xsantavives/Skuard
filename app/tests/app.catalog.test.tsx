@@ -42,11 +42,18 @@ describe("merchant catalog routes", () => {
     const html = renderRoute(<CatalogDiffView diff={{currentSnapshotId: "current", previousSnapshotId: "previous",
       resourceType: CatalogResourceType.PRODUCT, resourceId: entry.resourceId, status: "COMPARABLE", currentAction: "UPDATED",
       entries: [{path: "/title", operation: "CHANGED", before: "Old", after: "New"},
-        {path: "/optional", operation: "ADDED", after: null}], returnedChangeCount: 2, truncated: false,
+        {path: "/variants/0/price", operation: "CHANGED", before: "10", after: "12"},
+        {path: "/updated_at", operation: "CHANGED", before: "old date", after: "new date"},
+        {path: "/optional", operation: "ADDED", after: null}], returnedChangeCount: 4, truncated: false,
       currentEffectiveAt: new Date("2026-07-24T12:00:00Z"), previousEffectiveAt: new Date("2026-07-23T12:00:00Z")} } />);
     expect(html).toContain("/title"); expect(html).toContain("Changed"); expect(html).toContain("Added");
     expect(html).toContain("Old"); expect(html).toContain("New"); expect(html).toContain("Missing");
+    expect(html).toContain("Change categories"); expect(html).toContain("Product content: 1");
+    expect(html).toContain("Variant data: 1"); expect(html).toContain("System metadata: 1");
+    expect(html).toContain("Other: 1"); expect(html).toContain("/variants/0/price"); expect(html).toContain("Before");
     expect(html).toContain('data-value-kind="null"'); expect(html).not.toContain("secondary-hash"); expect(html).not.toContain("payload");
+    for (const excluded of ["severity", "risk", "incident", "recommendation", "recovery", "state hash", "shop identifier"])
+      expect(html.toLowerCase()).not.toContain(excluded);
   });
 
   it("explains non-comparable and truncated comparisons", () => {
@@ -56,5 +63,18 @@ describe("merchant catalog routes", () => {
     expect(tombstone).toContain("partial tombstone"); expect(tombstone).not.toContain("Changed paths returned");
     const truncated = renderRoute(<CatalogDiffView diff={{...base, currentAction: "UPDATED", status: "LIMIT_EXCEEDED", truncated: true}} />);
     expect(truncated).toContain("Results are truncated");
+  });
+
+  it("renders collection categories, exact paths, and bounded values", () => {
+    const html = renderRoute(<CatalogDiffView diff={{currentSnapshotId: "current", previousSnapshotId: "previous",
+      resourceType: CatalogResourceType.COLLECTION, resourceId: "collection-1", status: "COMPARABLE", currentAction: "UPDATED",
+      entries: [{path: "/title", operation: "CHANGED", before: "Old", after: "New"},
+        {path: "/rules/0/condition", operation: "ADDED", after: "tag"},
+        {path: "/image/src", operation: "CHANGED", before: "a", after: "b"},
+        {path: "/unknown", operation: "REMOVED", before: true}], returnedChangeCount: 4, truncated: false,
+      currentEffectiveAt: new Date("2026-07-24T12:00:00Z"), previousEffectiveAt: new Date("2026-07-23T12:00:00Z")} } />);
+    expect(html).toContain("Collection content: 1"); expect(html).toContain("Collection rules: 1");
+    expect(html).toContain("Collection media: 1"); expect(html).toContain("Other: 1");
+    expect(html).toContain("/rules/0/condition"); expect(html).toContain("tag"); expect(html).toContain("Removed");
   });
 });
