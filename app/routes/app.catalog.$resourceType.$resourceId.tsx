@@ -2,6 +2,7 @@ import type {LoaderFunctionArgs} from "react-router";
 import {Link, useLoaderData} from "react-router";
 import {authenticate} from "../shopify.server";
 import {renderDiffValue} from "../services/catalog-diff-renderer";
+import {classifyCatalogDiffEntry, summarizeCatalogChangeClassifications} from "../services/catalog-change-taxonomy";
 import {queryCatalogStructuralDiff, type CatalogStructuralDiff} from "../services/catalog-diff.server";
 import {queryCatalogResourceHistory, type CatalogResourceHistory} from "../services/catalog-timeline.server";
 
@@ -30,6 +31,7 @@ const explanations = {
 
 export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
   const comparable = diff.status === "COMPARABLE" || diff.status === "LIMIT_EXCEEDED";
+  const summary = summarizeCatalogChangeClassifications(diff.resourceType, diff.entries);
   return <section aria-labelledby="changes-heading">
     <h2 id="changes-heading">Structural changes</h2>
     <p><strong>Action:</strong> {labels[diff.currentAction]}</p>
@@ -37,13 +39,18 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
     {diff.previousEffectiveAt ? <p><strong>Previous event:</strong> <time dateTime={diff.previousEffectiveAt.toISOString()}>{diff.previousEffectiveAt.toLocaleString()}</time></p> : null}
     {!comparable ? <p>{explanations[diff.status as keyof typeof explanations]}</p> : <>
       <p><strong>Changed paths returned:</strong> {diff.returnedChangeCount}</p>
+      {summary.length ? <div aria-labelledby="change-summary-heading">
+        <h3 id="change-summary-heading">Change categories</h3>
+        <ul>{summary.map((item) => <li key={item.category}>{item.label}: {item.count}</li>)}</ul>
+      </div> : null}
       {diff.truncated ? <p role="alert">{explanations.LIMIT_EXCEEDED} Results are truncated.</p> : null}
       {!diff.entries.length ? <p>No structural changes were found.</p> : <table>
-        <thead><tr><th>Path</th><th>Operation</th><th>Before</th><th>After</th></tr></thead>
+        <thead><tr><th>Category</th><th>Path</th><th>Operation</th><th>Before</th><th>After</th></tr></thead>
         <tbody>{diff.entries.map((entry) => {
+          const classification = classifyCatalogDiffEntry(diff.resourceType, entry);
           const before = renderDiffValue(entry.before, Object.prototype.hasOwnProperty.call(entry, "before"));
           const after = renderDiffValue(entry.after, Object.prototype.hasOwnProperty.call(entry, "after"));
-          return <tr key={`${entry.operation}:${entry.path}`}><td><code>{entry.path || "(root)"}</code></td>
+          return <tr key={`${entry.operation}:${entry.path}`}><td>{classification.label}</td><td><code>{entry.path || "(root)"}</code></td>
             <td>{operations[entry.operation]}</td><td><code data-value-kind={before.kind}>{before.text}</code></td>
             <td><code data-value-kind={after.kind}>{after.text}</code></td></tr>;
         })}</tbody>

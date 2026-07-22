@@ -126,3 +126,9 @@ Comparison recursively walks objects by lexicographically sorted keys and arrays
 A comparison is capped at depth 32, 20,000 visited nodes, and 200 returned changes. Merchant rendering is capped at 500 characters per changed value, labels missing separately from JSON `null`, and summarizes arrays and objects with bounded canonical previews. Limit hits are explicitly reported as truncated rather than presented as complete. Only changed values are rendered—never complete snapshots, webhook payloads, hashes, delivery metadata, processing errors, or shop identity.
 
 SKU-006 remains in **Understand** and performs structural description only. It adds no semantic interpretation, importance, severity, risk, anomaly detection, policy, incident, alert, notification, recovery planning, rollback, reconciliation, polling, backfill, Admin API fetch, billing, AI, automation, Shopify write scope, mutation, or write call.
+
+## SKU-007 catalog change taxonomy
+
+Catalog change taxonomy is calculated on demand after SKU-006's structural comparison and classifies only the returned paths. Its explicit allow-listed categories are deterministic and resource-type-specific. Complete decimal array-index segments are normalized to `*` only for classification; the exact structural JSON Pointer remains unchanged and visible. Malformed, unsupported, and unknown paths remain visible as **Other** (`OTHER`).
+
+The category summary counts only returned entries in a fixed taxonomy order, so it does not imply counts for changes omitted by structural truncation. Classification is descriptive, not evaluative, and neither classifications nor summaries are persisted. This slice adds no severity, risk, anomaly, incident, policy, alert, recovery, AI, or automation. It also leaves SKU-006's positional, identity-unaware array comparison limitations unchanged.
