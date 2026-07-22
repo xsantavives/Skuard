@@ -1,12 +1,11 @@
 import {createHash} from "node:crypto";
 
-export type JsonValue = null | boolean | number | string | JsonValue[] | {[key: string]: JsonValue | undefined};
+export type JsonValue = null | boolean | number | string | JsonValue[] | {[key: string]: JsonValue};
 
 export function canonicalJson(value: JsonValue): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   return `{${Object.keys(value)
-    .filter((key) => value[key] !== undefined)
     .sort()
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] as JsonValue)}`)
     .join(",")}}`;
