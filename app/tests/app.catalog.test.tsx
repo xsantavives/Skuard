@@ -51,6 +51,8 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("Change categories"); expect(html).toContain("Product content: 1");
     expect(html).toContain("Variant data: 1"); expect(html).toContain("System metadata: 1");
     expect(html).toContain("Other: 1"); expect(html).toContain("/variants/0/price"); expect(html).toContain("Before");
+    expect(html).toContain("Detected signals"); expect(html).toContain("Product title changed: 1");
+    expect(html).toContain("Variant price changed: 1"); expect(html).toContain("Product content");
     expect(html).toContain('data-value-kind="null"'); expect(html).not.toContain("secondary-hash"); expect(html).not.toContain("payload");
     for (const excluded of ["severity", "risk", "incident", "recommendation", "recovery", "state hash", "shop identifier"])
       expect(html.toLowerCase()).not.toContain(excluded);
@@ -62,7 +64,8 @@ describe("merchant catalog routes", () => {
     const tombstone = renderRoute(<CatalogDiffView diff={{...base, status: "DELETED_TOMBSTONE"}} />);
     expect(tombstone).toContain("partial tombstone"); expect(tombstone).not.toContain("Changed paths returned");
     const truncated = renderRoute(<CatalogDiffView diff={{...base, currentAction: "UPDATED", status: "LIMIT_EXCEEDED", truncated: true}} />);
-    expect(truncated).toContain("Results are truncated");
+    expect(truncated).toContain("Results are truncated"); expect(truncated).toContain("Signals are based only on the returned structural changes");
+    expect(truncated).toContain("No deterministic signals matched the returned structural changes");
   });
 
   it("renders collection categories, exact paths, and bounded values", () => {
@@ -76,5 +79,22 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("Collection content: 1"); expect(html).toContain("Collection rules: 1");
     expect(html).toContain("Collection media: 1"); expect(html).toContain("Other: 1");
     expect(html).toContain("/rules/0/condition"); expect(html).toContain("tag"); expect(html).toContain("Removed");
+    expect(html).toContain("Detected signals"); expect(html).toContain("Collection title changed: 1");
+    expect(html).toContain("Collection rules changed: 1"); expect(html).toContain("Collection media changed: 1");
+    expect(html).toContain("/unknown");
+  });
+
+  it("keeps unmatched structural evidence visible while signals stay allow-listed", () => {
+    const html = renderRoute(<CatalogDiffView diff={{currentSnapshotId: "current", previousSnapshotId: "previous",
+      resourceType: CatalogResourceType.PRODUCT, resourceId: "product-1", status: "COMPARABLE", currentAction: "UPDATED",
+      entries: [{path: "/updated_at", operation: "CHANGED", before: "old", after: "new"},
+        {path: "/future_field", operation: "ADDED", after: {nested: true}}], returnedChangeCount: 2, truncated: false,
+      currentEffectiveAt: new Date(), previousEffectiveAt: new Date()} } />);
+    expect(html).toContain("System metadata"); expect(html).toContain("Other");
+    expect(html).toContain("/updated_at"); expect(html).toContain("/future_field");
+    expect(html).toContain("No deterministic signals matched the returned structural changes.");
+    for (const excluded of ["severity", "priority", "risk", "confidence", "impact", "incident", "recommendation",
+      "action required", "safe", "resolved", "webhook payload", "state hash", "shop identity"])
+      expect(html.toLowerCase()).not.toContain(excluded);
   });
 });

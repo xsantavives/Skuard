@@ -132,3 +132,9 @@ SKU-006 remains in **Understand** and performs structural description only. It a
 Catalog change taxonomy is calculated on demand after SKU-006's structural comparison and classifies only the returned paths. Its explicit allow-listed categories are deterministic and resource-type-specific. Complete decimal array-index segments are normalized to `*` only for classification; the exact structural JSON Pointer remains unchanged and visible. Malformed, unsupported, and unknown paths remain visible as **Other** (`OTHER`).
 
 The category summary counts only returned entries in a fixed taxonomy order, so it does not imply counts for changes omitted by structural truncation. Classification is descriptive, not evaluative, and neither classifications nor summaries are persisted. This slice adds no severity, risk, anomaly, incident, policy, alert, recovery, AI, or automation. It also leaves SKU-006's positional, identity-unaware array comparison limitations unchanged.
+
+## SKU-008 deterministic catalog change signals
+
+SKU-008 is the first constrained **Detect** slice. Explicit, deterministic signals are calculated on demand only from the structural diff entries already returned by the bounded comparison. Allow-listed matching uses the resource type and SKU-007's valid, normalized JSON Pointer path semantics; the original exact path, operation, and raw JSON-compatible before/after values remain the evidence. Unmatched structural changes remain visible, and system metadata and unknown fields do not automatically create signals.
+
+Signals and their fixed-order summaries are not persisted. Structural truncation therefore also limits signal completeness, and positional array evidence remains identity-unaware. This slice introduces no severity, risk, score, confidence, anomaly, policy, incident, alert, notification, recovery, AI, or automation.
