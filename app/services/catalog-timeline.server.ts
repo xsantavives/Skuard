@@ -74,6 +74,22 @@ export function effectiveEventTime(entry: Pick<CatalogTimelineEntry, "occurredAt
   return entry.occurredAt ?? entry.receivedAt;
 }
 
+/** Shared database ordering for all snapshot read models. */
+export const CATALOG_TIMELINE_ORDER_SQL = Prisma.sql`
+  COALESCE("occurredAt", "receivedAt") DESC, "receivedAt" DESC, "createdAt" DESC, "id" DESC
+`;
+
+export function snapshotBeforeSql(entry: CatalogTimelineCursor) {
+  const effective = new Date(entry.effectiveAt); const received = new Date(entry.receivedAt);
+  const created = new Date(entry.createdAt);
+  return Prisma.sql`(
+    COALESCE("occurredAt", "receivedAt") < ${effective} OR
+    (COALESCE("occurredAt", "receivedAt") = ${effective} AND "receivedAt" < ${received}) OR
+    (COALESCE("occurredAt", "receivedAt") = ${effective} AND "receivedAt" = ${received} AND "createdAt" < ${created}) OR
+    (COALESCE("occurredAt", "receivedAt") = ${effective} AND "receivedAt" = ${received} AND "createdAt" = ${created} AND "id" < ${entry.id})
+  )`;
+}
+
 // Newest first: effective event time, receivedAt, createdAt, then snapshot ID.
 export function compareTimelineEntries(a: CatalogTimelineEntry, b: CatalogTimelineEntry) {
   const valuesA = [effectiveEventTime(a).valueOf(), a.receivedAt.valueOf(), a.createdAt.valueOf()];
@@ -140,21 +156,14 @@ const prismaTimelineRepository: CatalogTimelineRepository = {
     if (filters.resourceId) conditions.push(Prisma.sql`"resourceId" = ${filters.resourceId}`);
     if (filters.action) conditions.push(Prisma.sql`"sourceTopic" IN (${Prisma.join(topicsForAction(filters.action))})`);
     if (before) {
-      const effective = new Date(before.effectiveAt); const received = new Date(before.receivedAt);
-      const created = new Date(before.createdAt);
-      conditions.push(Prisma.sql`(
-        COALESCE("occurredAt", "receivedAt") < ${effective} OR
-        (COALESCE("occurredAt", "receivedAt") = ${effective} AND "receivedAt" < ${received}) OR
-        (COALESCE("occurredAt", "receivedAt") = ${effective} AND "receivedAt" = ${received} AND "createdAt" < ${created}) OR
-        (COALESCE("occurredAt", "receivedAt") = ${effective} AND "receivedAt" = ${received} AND "createdAt" = ${created} AND "id" < ${before.id})
-      )`);
+      conditions.push(snapshotBeforeSql(before));
     }
     return prisma.$queryRaw<SnapshotMetadata[]>(Prisma.sql`
       SELECT "id", "resourceType", "resourceId", "sourceTopic", "isDeleted",
         "occurredAt", "receivedAt", "createdAt", "stateHash"
       FROM "CatalogSnapshot"
       WHERE ${Prisma.join(conditions, " AND ")}
-      ORDER BY COALESCE("occurredAt", "receivedAt") DESC, "receivedAt" DESC, "createdAt" DESC, "id" DESC
+      ORDER BY ${CATALOG_TIMELINE_ORDER_SQL}
       LIMIT ${take}
     `);
   },

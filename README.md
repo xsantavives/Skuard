@@ -114,3 +114,15 @@ Lifecycle actions are derived only from the source topic: `products/create` and 
 `/app/catalog/:resourceType/:resourceId` provides up to 25 recent events (bounded at 50) for one exact shop-scoped resource using the same ordering. Its current status is derived from the newest snapshot: a tombstone means **Deleted**, while a non-tombstone means **Active**. Deleted resource history therefore remains visible without a mutable current-state table.
 
 Activity begins only with snapshots produced after SKU-004 deployment; retained earlier webhook evidence is not backfilled. SKU-005 intentionally does not parse snapshot state for names or other attributes and adds no field comparison, structural or semantic diff, changed-field extraction, Shopify fetch, write operation, policy, incident, alert, notification, recovery, billing, AI, or automation.
+
+## SKU-006 structural catalog diff
+
+Structural Diff is an on-demand, shop-scoped read model over adjacent immutable `CatalogSnapshot` states; it creates no `CatalogDiff` table and persists or caches no calculated diff. The resource-history screen can compare an exact selected snapshot only with its immediately preceding snapshot under SKU-005's effective-time, received-time, created-time, and snapshot-ID ordering.
+
+Only an update following an active snapshot is comparable. A first snapshot or creation has no baseline, a deletion tombstone is never field-compared, and an active snapshot after a tombstone has no comparable baseline. Unsupported or inconsistent lifecycle data fails closed. Tombstones are not reconstructed or merged and the app does not fetch Shopify state.
+
+Comparison recursively walks objects by lexicographically sorted keys and arrays by ascending numeric position. Missing properties or indexes are Added or Removed; unequal scalars and JSON type changes are Changed. Paths use RFC 6901 JSON Pointer (the root is the empty pointer, `~` becomes `~0`, and `/` becomes `~1`). Positional array comparison is deliberately identity-unaware and can be noisy when Shopify reorders arrays; normalization and identity-aware matching belong to a later slice.
+
+A comparison is capped at depth 32, 20,000 visited nodes, and 200 returned changes. Merchant rendering is capped at 500 characters per changed value, labels missing separately from JSON `null`, and summarizes arrays and objects with bounded canonical previews. Limit hits are explicitly reported as truncated rather than presented as complete. Only changed values are rendered—never complete snapshots, webhook payloads, hashes, delivery metadata, processing errors, or shop identity.
+
+SKU-006 remains in **Understand** and performs structural description only. It adds no semantic interpretation, importance, severity, risk, anomaly detection, policy, incident, alert, notification, recovery planning, rollback, reconciliation, polling, backfill, Admin API fetch, billing, AI, automation, Shopify write scope, mutation, or write call.
