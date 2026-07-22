@@ -43,9 +43,10 @@ const LABELS: Record<CatalogChangeCategory, string> = {
   OTHER: "Other",
 };
 
-interface ParsedPointer {valid: boolean; segments: string[]; normalizedPath: string}
+export interface ParsedCatalogChangePath {valid: boolean; segments: string[]; normalizedPath: string}
 
-function parseJsonPointer(path: string): ParsedPointer {
+/** Parses RFC 6901 and normalizes complete decimal segments for classification. */
+export function parseCatalogChangePath(path: string): ParsedCatalogChangePath {
   if (path === "") return {valid: true, segments: [], normalizedPath: ""};
   if (!path.startsWith("/")) return {valid: false, segments: [], normalizedPath: path};
   const encodedSegments = path.slice(1).split("/");
@@ -63,14 +64,14 @@ function parseJsonPointer(path: string): ParsedPointer {
 
 /** Normalizes complete decimal path segments without changing invalid pointers. */
 export function normalizeCatalogChangePath(path: string): string {
-  return parseJsonPointer(path).normalizedPath;
+  return parseCatalogChangePath(path).normalizedPath;
 }
 
 const CONTENT = new Set(["title", "body_html", "description", "description_html", "template_suffix"]);
 const IDENTITY = new Set(["id", "admin_graphql_api_id", "handle"]);
 const METADATA = new Set(["created_at", "updated_at"]);
 
-function categoryFor(resourceType: CatalogResourceType, parsed: ParsedPointer): CatalogChangeCategory {
+function categoryFor(resourceType: CatalogResourceType, parsed: ParsedCatalogChangePath): CatalogChangeCategory {
   if (!parsed.valid || parsed.segments.length === 0) return "OTHER";
   const [root] = parsed.segments;
   if (parsed.segments.length === 1 && METADATA.has(root!)) return "SYSTEM_METADATA";
@@ -97,7 +98,7 @@ export function classifyCatalogDiffEntry(
   resourceType: CatalogResourceType,
   entry: CatalogDiffEntryLike,
 ): CatalogChangeClassification {
-  const parsed = parseJsonPointer(entry.path);
+  const parsed = parseCatalogChangePath(entry.path);
   const category = categoryFor(resourceType, parsed);
   return {category, label: LABELS[category], normalizedPath: parsed.normalizedPath};
 }

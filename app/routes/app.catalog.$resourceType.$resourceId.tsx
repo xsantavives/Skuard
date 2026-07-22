@@ -3,6 +3,7 @@ import {Link, useLoaderData} from "react-router";
 import {authenticate} from "../shopify.server";
 import {renderDiffValue} from "../services/catalog-diff-renderer";
 import {classifyCatalogDiffEntry, summarizeCatalogChangeClassifications} from "../services/catalog-change-taxonomy";
+import {deriveCatalogChangeSignals, summarizeCatalogChangeSignals} from "../services/catalog-change-signals";
 import {queryCatalogStructuralDiff, type CatalogStructuralDiff} from "../services/catalog-diff.server";
 import {queryCatalogResourceHistory, type CatalogResourceHistory} from "../services/catalog-timeline.server";
 
@@ -32,6 +33,8 @@ const explanations = {
 export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
   const comparable = diff.status === "COMPARABLE" || diff.status === "LIMIT_EXCEEDED";
   const summary = summarizeCatalogChangeClassifications(diff.resourceType, diff.entries);
+  const signals = deriveCatalogChangeSignals(diff.resourceType, diff.entries);
+  const signalSummary = summarizeCatalogChangeSignals(signals);
   return <section aria-labelledby="changes-heading">
     <h2 id="changes-heading">Structural changes</h2>
     <p><strong>Action:</strong> {labels[diff.currentAction]}</p>
@@ -55,6 +58,24 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
             <td><code data-value-kind={after.kind}>{after.text}</code></td></tr>;
         })}</tbody>
       </table>}
+      <section aria-labelledby="signals-heading">
+        <h3 id="signals-heading">Detected signals</h3>
+        {diff.truncated ? <p>Signals are based only on the returned structural changes because the comparison was truncated.</p> : null}
+        {!signals.length ? <p>No deterministic signals matched the returned structural changes.</p> : <>
+          <ul>{signalSummary.map((item) => <li key={item.code}>{item.label}: {item.count}</li>)}</ul>
+          <table>
+            <thead><tr><th>Signal</th><th>Category</th><th>Path</th><th>Operation</th><th>Before</th><th>After</th></tr></thead>
+            <tbody>{signals.map((signal, index) => {
+              const before = renderDiffValue(signal.before, Object.prototype.hasOwnProperty.call(signal, "before"));
+              const after = renderDiffValue(signal.after, Object.prototype.hasOwnProperty.call(signal, "after"));
+              return <tr key={`${signal.operation}:${signal.path}:${index}`}><td>{signal.label}</td>
+                <td>{classifyCatalogDiffEntry(diff.resourceType, signal).label}</td><td><code>{signal.path}</code></td>
+                <td>{operations[signal.operation]}</td><td><code data-value-kind={before.kind}>{before.text}</code></td>
+                <td><code data-value-kind={after.kind}>{after.text}</code></td></tr>;
+            })}</tbody>
+          </table>
+        </>}
+      </section>
     </>}
   </section>;
 }
