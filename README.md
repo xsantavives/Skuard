@@ -150,3 +150,9 @@ Findings are not persisted and no historical analysis exists. This slice introdu
 SKU-010 remains inside **Detect**. Recent historical findings are calculated on demand for one exact authenticated-shop-scoped resource from a separately bounded snapshot window. Only adjacent snapshots in the established timeline order are candidate comparisons, and lifecycle eligibility matches the structural diff: invalid data, creations, tombstones, and updates immediately after tombstones fail closed without bypassing a snapshot.
 
 The factual summary counts comparable comparisons separately from their returned signal evidence. Structural comparison, signal derivation, and finding derivation are reused unchanged; structurally truncated comparisons remain counted but may produce incomplete findings. Results and occurrences are not persisted, and there is no historical background processing. This slice adds no anomaly, threshold, policy, incident, alert, recommendation, recovery, AI, automation, Shopify fetch, mutation, or scope.
+
+## SKU-011 historical finding occurrence drilldown
+
+SKU-011 remains inside **Detect** and makes each bounded historical finding traceable to the exact adjacent comparisons where it appeared. Each occurrence reuses SKU-009's finding evidence count and links to the existing structural comparison; truncated evidence is explicitly qualified as returned and potentially incomplete.
+
+Occurrences remain bounded, read-only, calculated on demand by SKU-010's single exact-resource query, and non-persisted. The summary includes no raw snapshot state and introduces no frequency or trend classification, anomaly, severity, policy, incident, recommendation, recovery, AI, or automation.
