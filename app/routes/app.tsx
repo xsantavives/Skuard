@@ -20,6 +20,11 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
   }
 };
 
+export const merchantNavigation = [
+  {label: "Overview", href: "/app", home: true},
+  {label: "Catalog activity", href: "/app/catalog", home: false},
+] as const;
+
 export default function EmbeddedApp() {
   const {apiKey} = useLoaderData<typeof loader>();
 
@@ -27,11 +32,9 @@ export default function EmbeddedApp() {
     <ShopifyAppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={enTranslations}>
         <NavMenu>
-          <a href="/app" rel="home">
-            Home
-          </a>
-          <a href="/app/catalog">Catalog activity</a>
-          <a href="/app/diagnostics">Diagnostics</a>
+          {merchantNavigation.map((item) => <a key={item.href} href={item.href} rel={item.home ? "home" : undefined}>
+            {item.label}
+          </a>)}
         </NavMenu>
         <Outlet />
       </PolarisAppProvider>
