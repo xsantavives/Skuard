@@ -172,3 +172,7 @@ The architectural decision is a separate detection-overview read-model service r
 Candidate-window truncation means older candidates were not analyzed, structural truncation means findings use only returned structural entries, and occurrence-list truncation means additional contributing comparisons in the analyzed window are not rendered. These qualifications are independent and the overview does not claim catalog-wide completeness. Allow-listed `PRODUCT`/`COLLECTION` and fixed finding-code filters are supported, while the opaque `overviewCursor` is independent from timeline and finding-activity pagination and advances across skipped and zero-finding candidates.
 
 The overview adds no severity, risk, trend, anomaly, incident, policy, recommendation, recovery planning, automation, AI, billing, Shopify fetch, mutation, or scope. Shopify access remains exactly `read_products`.
+
+## Deployment validation
+
+Use the [Render and embedded Shopify Admin deployment-validation runbook](docs/deployment-validation.md) to configure the production service and record external validation results.
