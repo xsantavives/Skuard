@@ -9,17 +9,18 @@ import {CATALOG_TIMELINE_ORDER_SQL, compareTimelineEntries, effectiveEventTime} 
 export const DEFAULT_HISTORICAL_COMPARISON_LIMIT = 10;
 export const MAX_HISTORICAL_COMPARISON_LIMIT = 20;
 
-export interface CatalogHistoricalFindingOccurrence {
+export interface CatalogHistoricalFindingReference {
   currentSnapshotId: string; previousSnapshotId: string; currentEffectiveAt: Date; previousEffectiveAt: Date;
-  findingCodes: CatalogComparisonFindingCode[]; truncated: boolean;
+  evidenceCount: number; truncated: boolean;
 }
 export interface CatalogHistoricalFindingSummaryItem {
   code: CatalogComparisonFindingCode; label: string; comparisonCount: number; evidenceCount: number;
+  occurrences: CatalogHistoricalFindingReference[];
 }
 export interface CatalogHistoricalFindingSummary {
   resourceType: CatalogResourceType; resourceId: string; requestedComparisonLimit: number; snapshotCount: number;
   adjacentPairCount: number; comparablePairCount: number; skippedPairCount: number; truncatedComparisonCount: number;
-  findings: CatalogHistoricalFindingSummaryItem[]; occurrences: CatalogHistoricalFindingOccurrence[]; historyExhausted: boolean;
+  findings: CatalogHistoricalFindingSummaryItem[]; historyExhausted: boolean;
 }
 export interface CatalogFindingHistoryRepository {
   findRecent(input: {shop: string; resourceType: CatalogResourceType; resourceId: string; take: number}): Promise<DiffSnapshot[]>;
@@ -40,8 +41,7 @@ const repository: CatalogFindingHistoryRepository = {
 export function summarizeCatalogFindingHistory(resourceType: CatalogResourceType, resourceId: string,
   snapshots: readonly DiffSnapshot[], comparisonLimit: number, historyExhausted: boolean): CatalogHistoricalFindingSummary {
   const ordered = [...snapshots].sort(compareTimelineEntries).slice(0, comparisonLimit + 1);
-  const occurrences: CatalogHistoricalFindingOccurrence[] = [];
-  const totals = new Map<CatalogComparisonFindingCode, {label: string; comparisonCount: number; evidenceCount: number}>();
+  const totals = new Map<CatalogComparisonFindingCode, CatalogHistoricalFindingSummaryItem>();
   let comparablePairCount = 0; let truncatedComparisonCount = 0;
   for (let index = 0; index + 1 < ordered.length; index += 1) {
     const current = ordered[index]!; const previous = ordered[index + 1]!;
@@ -52,20 +52,23 @@ export function summarizeCatalogFindingHistory(resourceType: CatalogResourceType
     if (diff.truncated) truncatedComparisonCount += 1;
     const findings = deriveCatalogComparisonFindings(resourceType, deriveCatalogChangeSignals(resourceType, diff.entries),
       {truncated: diff.truncated});
-    occurrences.push({currentSnapshotId: current.id, previousSnapshotId: previous.id,
-      currentEffectiveAt: effectiveEventTime(current), previousEffectiveAt: effectiveEventTime(previous),
-      findingCodes: findings.map(({code}) => code), truncated: diff.truncated});
     for (const finding of findings) {
-      const total = totals.get(finding.code) ?? {label: finding.label, comparisonCount: 0, evidenceCount: 0};
-      total.comparisonCount += 1; total.evidenceCount += finding.evidenceCount; totals.set(finding.code, total);
+      const total = totals.get(finding.code) ?? {code: finding.code, label: finding.label, comparisonCount: 0,
+        evidenceCount: 0, occurrences: []};
+      total.occurrences.push({currentSnapshotId: current.id, previousSnapshotId: previous.id,
+        currentEffectiveAt: effectiveEventTime(current), previousEffectiveAt: effectiveEventTime(previous),
+        evidenceCount: finding.evidenceCount, truncated: diff.truncated});
+      total.comparisonCount = total.occurrences.length;
+      total.evidenceCount += finding.evidenceCount;
+      totals.set(finding.code, total);
     }
   }
   const adjacentPairCount = Math.max(0, ordered.length - 1);
   return {resourceType, resourceId, requestedComparisonLimit: comparisonLimit, snapshotCount: ordered.length,
     adjacentPairCount, comparablePairCount, skippedPairCount: adjacentPairCount - comparablePairCount,
     truncatedComparisonCount, findings: CATALOG_COMPARISON_FINDING_CODES.flatMap((code) => {
-      const total = totals.get(code); return total ? [{code, ...total}] : [];
-    }), occurrences, historyExhausted};
+      const total = totals.get(code); return total ? [total] : [];
+    }), historyExhausted};
 }
 
 export async function queryCatalogFindingHistory(shop: string, resourceType: string, resourceId: string,

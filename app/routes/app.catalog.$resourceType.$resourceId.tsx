@@ -111,11 +111,23 @@ export function HistoricalFindingsView({summary}: {summary: CatalogHistoricalFin
     </dl>
     {truncated > 0 ? <p>{truncated} analyzed {truncated === 1 ? "comparison was" : "comparisons were"} structurally truncated; {truncated === 1 ? "its" : "their"} findings may be incomplete.</p> : null}
     {summary.comparablePairCount === 0 ? <p>No comparable updates were available in the analyzed snapshot window.</p> :
-      summary.findings.length === 0 ? <p>No deterministic findings matched the analyzed comparable updates.</p> : <table>
+      summary.findings.length === 0 ? <p>No deterministic findings matched the analyzed comparable updates.</p> : <>
+      <table>
         <thead><tr><th>Finding</th><th>Comparisons observed</th><th>Evidence signals</th></tr></thead>
         <tbody>{summary.findings.map((finding) => <tr key={finding.code}><td>{finding.label}</td>
           <td>{finding.comparisonCount} of {summary.comparablePairCount}</td><td>{finding.evidenceCount}</td></tr>)}</tbody>
-      </table>}
+      </table>
+      <div aria-label="Historical finding occurrences">{summary.findings.map((finding) => <section key={finding.code}>
+        <h3>{finding.label}</h3>
+        <p>{finding.comparisonCount} of {summary.comparablePairCount} comparable updates · {finding.evidenceCount} evidence {finding.evidenceCount === 1 ? "signal" : "signals"}</p>
+        <ul>{finding.occurrences.map((occurrence) => <li key={occurrence.currentSnapshotId}>
+          <time dateTime={occurrence.currentEffectiveAt.toISOString()}>{occurrence.currentEffectiveAt.toLocaleString()}</time>{" — "}
+          {occurrence.evidenceCount} {occurrence.truncated ? "returned " : ""}evidence {occurrence.evidenceCount === 1 ? "signal" : "signals"}
+          {occurrence.truncated ? " — Comparison truncated" : ""}{" — "}
+          <Link to={`?snapshot=${encodeURIComponent(occurrence.currentSnapshotId)}`}>View comparison</Link>
+        </li>)}</ul>
+      </section>)}</div>
+      </>}
   </section>;
 }
 
@@ -145,7 +157,8 @@ export default function CatalogResourceHistoryRoute() {
     createdAt: new Date(entry.createdAt)}))};
   const hydratedDiff = diff ? {...diff, currentEffectiveAt: new Date(diff.currentEffectiveAt),
     previousEffectiveAt: diff.previousEffectiveAt ? new Date(diff.previousEffectiveAt) : undefined} : undefined;
-  const hydratedFindings = {...historicalFindings, occurrences: historicalFindings.occurrences.map((occurrence) => ({...occurrence,
-    currentEffectiveAt: new Date(occurrence.currentEffectiveAt), previousEffectiveAt: new Date(occurrence.previousEffectiveAt)}))};
+  const hydratedFindings = {...historicalFindings, findings: historicalFindings.findings.map((finding) => ({...finding,
+    occurrences: finding.occurrences.map((occurrence) => ({...occurrence,
+      currentEffectiveAt: new Date(occurrence.currentEffectiveAt), previousEffectiveAt: new Date(occurrence.previousEffectiveAt)}))}))};
   return <CatalogResourceHistoryView history={hydratedHistory} historicalFindings={hydratedFindings} diff={hydratedDiff} />;
 }

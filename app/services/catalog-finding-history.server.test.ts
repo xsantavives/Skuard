@@ -43,7 +43,7 @@ describe("bounded historical finding summary", () => {
     const input = [oldest, newest, tombstone]; const copy = [...input];
     const result = summarizeCatalogFindingHistory("PRODUCT", "product-1", input, 10, true);
     expect(result).toMatchObject({snapshotCount: 3, adjacentPairCount: 2, comparablePairCount: 0, skippedPairCount: 2});
-    expect(result.occurrences).toEqual([]); expect(input).toEqual(copy);
+    expect(result.findings).toEqual([]); expect(input).toEqual(copy);
   });
 
   it("aggregates comparison counts separately from repeated evidence in fixed order", () => {
@@ -57,8 +57,13 @@ describe("bounded historical finding summary", () => {
     expect(result.findings.map(({code}) => code)).toEqual(["PRODUCT_IDENTITY_CHANGED", "VARIANT_PRICING_CHANGED"]);
     expect(result.findings[0]).toMatchObject({comparisonCount: 2, evidenceCount: 2});
     expect(result.findings[1]).toMatchObject({comparisonCount: 2, evidenceCount: 4});
-    expect(result.occurrences.map(({currentSnapshotId, previousSnapshotId}) => [currentSnapshotId, previousSnapshotId]))
+    expect(result.findings[1]!.occurrences.map(({currentSnapshotId, previousSnapshotId}) => [currentSnapshotId, previousSnapshotId]))
       .toEqual([["three", "two"], ["two", "one"]]);
+    for (const finding of result.findings) {
+      expect(finding.comparisonCount).toBe(finding.occurrences.length);
+      expect(finding.evidenceCount).toBe(finding.occurrences.reduce((sum, occurrence) => sum + occurrence.evidenceCount, 0));
+      expect(new Set(finding.occurrences.map(({currentSnapshotId}) => currentSnapshotId)).size).toBe(finding.occurrences.length);
+    }
   });
 
   it("keeps structurally truncated comparisons and their returned findings", () => {
@@ -67,8 +72,49 @@ describe("bounded historical finding summary", () => {
     const result = summarizeCatalogFindingHistory("PRODUCT", "product-1",
       [snapshot("new", 2, {variants}), snapshot("old", 1, {variants: previous})], 10, true);
     expect(result).toMatchObject({comparablePairCount: 1, truncatedComparisonCount: 1});
-    expect(result.occurrences[0]?.truncated).toBe(true);
-    expect(result.findings).toContainEqual(expect.objectContaining({code: "VARIANT_PRICING_CHANGED", comparisonCount: 1}));
+    const finding = result.findings.find(({code}) => code === "VARIANT_PRICING_CHANGED");
+    expect(finding).toMatchObject({comparisonCount: 1, evidenceCount: 200});
+    expect(finding?.occurrences).toEqual([expect.objectContaining({currentSnapshotId: "new", previousSnapshotId: "old",
+      evidenceCount: 200, truncated: true})]);
+  });
+
+  it("keeps atomic and combination occurrences independent and preserves comparison order over evidence count", () => {
+    const input = [
+      snapshot("new", 3, {title: "C", status: "ACTIVE", variants: [{price: "3"}]}),
+      snapshot("middle", 2, {title: "B", status: "DRAFT", variants: [{price: "1"}, {price: "2"}]}),
+      snapshot("old", 1, {title: "A", status: "DRAFT", variants: [{price: "0"}, {price: "1"}]}),
+    ];
+    const copy = structuredClone(input);
+    const first = summarizeCatalogFindingHistory("PRODUCT", "product-1", input, 10, true);
+    const reversed = summarizeCatalogFindingHistory("PRODUCT", "product-1", [...input].reverse(), 10, true);
+    expect(first).toEqual(reversed);
+    expect(JSON.stringify(summarizeCatalogFindingHistory("PRODUCT", "product-1", input, 10, true))).toBe(JSON.stringify(first));
+    expect(input).toEqual(copy);
+    expect(first.findings.map(({code}) => code)).toEqual([
+      "PRODUCT_IDENTITY_CHANGED", "PRODUCT_PUBLICATION_CHANGED", "VARIANT_PRICING_CHANGED",
+      "PRODUCT_IDENTITY_AND_PUBLICATION_CHANGED",
+    ]);
+    const identity = first.findings[0]!;
+    expect(identity.occurrences.map(({currentSnapshotId, evidenceCount}) => [currentSnapshotId, evidenceCount]))
+      .toEqual([["new", 1], ["middle", 1]]);
+    expect(first.findings.at(-1)?.occurrences).toHaveLength(1);
+  });
+
+  it("uses timeline tie-breakers for newest-first occurrences and bounds each finding by the comparison limit", () => {
+    const same = at(1);
+    const rows = Array.from({length: 22}, (_, index) => snapshot(String(index).padStart(2, "0"), 1,
+      {title: String(index)}, {occurredAt: same, receivedAt: same, createdAt: same}));
+    const result = summarizeCatalogFindingHistory("PRODUCT", "product-1", rows, MAX_HISTORICAL_COMPARISON_LIMIT, false);
+    expect(result.findings[0]?.occurrences).toHaveLength(MAX_HISTORICAL_COMPARISON_LIMIT);
+    expect(result.findings[0]?.occurrences.map(({currentSnapshotId}) => currentSnapshotId))
+      .toEqual(Array.from({length: 20}, (_, index) => String(21 - index).padStart(2, "0")));
+  });
+
+  it("counts comparable zero-finding comparisons without creating occurrences", () => {
+    const result = summarizeCatalogFindingHistory("PRODUCT", "product-1",
+      [snapshot("new", 2, {updated_at: "B"}), snapshot("old", 1, {updated_at: "A"})], 10, true);
+    expect(result.comparablePairCount).toBe(1);
+    expect(result.findings).toEqual([]);
   });
 
   it("fails closed for unsupported lifecycle, inconsistent deletion, creation, and invalid JSON", () => {

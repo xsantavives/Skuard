@@ -13,7 +13,7 @@ const entry = {id: "snapshot-1", resourceType: CatalogResourceType.PRODUCT, reso
   stateHash: "secondary-hash"};
 const emptySummary = {resourceType: CatalogResourceType.PRODUCT, resourceId: entry.resourceId,
   requestedComparisonLimit: 10, snapshotCount: 1, adjacentPairCount: 0, comparablePairCount: 0, skippedPairCount: 0,
-  truncatedComparisonCount: 0, findings: [], occurrences: [], historyExhausted: true};
+  truncatedComparisonCount: 0, findings: [], historyExhausted: true};
 
 function renderRoute(element: ReactNode) {
   const Stub = createRoutesStub([{path: "/", Component: () => element}]);
@@ -44,13 +44,29 @@ describe("merchant catalog routes", () => {
   it("renders bounded historical findings, qualifications, counts, and neutral empty states", () => {
     const html = renderRoute(<HistoricalFindingsView summary={{...emptySummary, snapshotCount: 11, adjacentPairCount: 10,
       comparablePairCount: 7, skippedPairCount: 3, truncatedComparisonCount: 2, historyExhausted: false,
-      findings: [{code: "VARIANT_PRICING_CHANGED", label: "Variant pricing fields changed", comparisonCount: 3, evidenceCount: 5}]}} />);
+      findings: [{code: "VARIANT_PRICING_CHANGED", label: "Variant pricing fields changed", comparisonCount: 2, evidenceCount: 3,
+        occurrences: [
+          {currentSnapshotId: "current/id", previousSnapshotId: "previous-1", currentEffectiveAt: new Date("2026-07-22T12:00:00Z"),
+            previousEffectiveAt: new Date("2026-07-21T12:00:00Z"), evidenceCount: 2, truncated: false},
+          {currentSnapshotId: "older?private=x", previousSnapshotId: "previous-2", currentEffectiveAt: new Date("2026-07-19T12:00:00Z"),
+            previousEffectiveAt: new Date("2026-07-18T12:00:00Z"), evidenceCount: 1, truncated: true},
+        ]}]}} />);
     expect(html).toContain("Recent historical findings"); expect(html).toContain("most recent 10 adjacent comparisons");
-    expect(html).toContain("Older catalog history was not analyzed"); expect(html).toContain("3 of 7"); expect(html).toContain(">5<");
+    expect(html).toContain("Older catalog history was not analyzed"); expect(html).toContain("2 of 7"); expect(html).toContain(">3<");
     expect(html).toContain("2 analyzed comparisons were structurally truncated; their findings may be incomplete.");
+    expect(html).toContain("Historical finding occurrences"); expect(html).toContain("7/22/2026");
+    expect(html).toContain("2 evidence signals"); expect(html).toContain("1 returned evidence signal — Comparison truncated");
+    expect(html).toContain("View comparison"); expect(html).toContain("?snapshot=current%2Fid");
+    expect(html).toContain("?snapshot=older%3Fprivate%3Dx"); expect(html).not.toContain("previous-1");
     expect(renderRoute(<HistoricalFindingsView summary={emptySummary} />)).toContain("No comparable updates were available");
-    expect(renderRoute(<HistoricalFindingsView summary={{...emptySummary, comparablePairCount: 1, adjacentPairCount: 1}} />))
-      .toContain("No deterministic findings matched");
+    const noFindings = renderRoute(<HistoricalFindingsView summary={{...emptySummary, comparablePairCount: 1, adjacentPairCount: 1}} />);
+    expect(noFindings).toContain("No deterministic findings matched");
+    expect(noFindings).not.toContain("Historical finding occurrences");
+    expect(renderRoute(<HistoricalFindingsView summary={emptySummary} />)).not.toContain("Historical finding occurrences");
+    for (const excluded of ["severity", "priority", "risk", "impact", "confidence", "score", "anomaly", "trend",
+      "incident", "policy", "recommendation", "action required", "safe", "acknowledgement", "assignment",
+      "raw snapshot", "webhook payload", "hash", "shop identity"])
+      expect(html.toLowerCase()).not.toContain(excluded);
   });
 
   it("renders changed paths, labels, bounded values, null, and missing without private state", () => {
