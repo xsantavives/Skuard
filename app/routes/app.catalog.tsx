@@ -1,5 +1,6 @@
 import type {LoaderFunctionArgs} from "react-router";
 import {Form, Link, useLoaderData} from "react-router";
+import {BlockStack, Button, Card, Divider, InlineStack, Page, Text} from "@shopify/polaris";
 import {authenticate} from "../shopify.server";
 import {
   parseCatalogDetectionOverviewFilters,
@@ -62,12 +63,14 @@ export function CatalogTimelineView({
   nextCursor,
   filters = {},
   search = "",
+  standalone = true,
 }: {
   entries: CatalogTimelineEntry[];
   hasNextPage: boolean;
   nextCursor?: string;
   filters?: CatalogTimelineFilters;
   search?: string;
+  standalone?: boolean;
 }) {
   const moreParams = paginationParams(search, "cursor");
   for (const [key, value] of Object.entries(filters))
@@ -76,10 +79,39 @@ export function CatalogTimelineView({
       moreParams.set(queryKey, String(value));
     }
   if (nextCursor) moreParams.set("cursor", nextCursor);
-  return (
-    <main>
-      <h1>Catalog activity</h1>
-      <p>Product and collection activity recorded from immutable catalog snapshots.</p>
+  const filtered = Object.values(filters).some((value) => value !== undefined);
+  const content = (
+      <BlockStack gap="500">
+      <section aria-labelledby="activity-heading">
+      <BlockStack gap="300"><Text as="h2" variant="headingMd" id="activity-heading">Recent activity</Text>
+      {!entries.length ? (
+        <Card><BlockStack gap="200">
+          <Text as="h3" variant="headingMd">{filtered ? "No activity matches these filters" : "Waiting for catalog activity"}</Text>
+          <Text as="p" tone="subdued">{filtered
+            ? "Try changing or clearing the filters to see other recorded activity."
+            : "Skuard records product and collection changes after monitoring was enabled. Previous activity is not backfilled, and no action is required while you wait."}</Text>
+          {filtered ? <Button url="/app/catalog">Reset filters</Button> : null}
+        </BlockStack></Card>
+      ) : (
+        <Card><BlockStack gap="300">
+          {entries.map((entry, index) => (
+            <BlockStack key={entry.id} gap="200">
+              {index ? <Divider /> : null}
+              <InlineStack align="space-between" gap="300" wrap={false}>
+                <BlockStack gap="100"><Text as="h3" variant="headingSm">
+                  {entry.resourceType === "PRODUCT" ? "Product" : "Collection"} {ACTION_LABELS[entry.action].toLowerCase()}
+                </Text>
+                <Link to={`/app/catalog/${entry.resourceType}/${encodeURIComponent(entry.resourceId)}`}>{entry.resourceId}</Link>
+                {entry.isDeleted ? <Text as="p" tone="critical">Deleted</Text> : null}</BlockStack>
+                <Text as="span" tone="subdued"><time dateTime={effectiveTime(entry).toISOString()}>{effectiveTime(entry).toLocaleString()}</time></Text>
+              </InlineStack>
+            </BlockStack>
+          ))}
+        </BlockStack></Card>
+      )}
+      {hasNextPage && nextCursor ? <Button url={`?${moreParams.toString()}`}>Load more activity</Button> : null}
+      </BlockStack></section>
+      <Card><BlockStack gap="300"><Text as="h2" variant="headingMd">Filter activity</Text>
       <Form method="get">
         <label>
           Resource type{" "}
@@ -121,49 +153,16 @@ export function CatalogTimelineView({
             defaultValue={filters.isDeleted === undefined ? "" : String(filters.isDeleted)}
           >
             <option value="">All</option>
-            <option value="false">Active snapshot</option>
-            <option value="true">Deletion tombstone</option>
+            <option value="false">Current activity</option>
+            <option value="true">Deleted</option>
           </select>
         </label>{" "}
         <button type="submit">Apply filters</button>
-      </Form>
-      {!entries.length ? (
-        <section>
-          <h2>No catalog activity yet</h2>
-          <p>
-            Activity begins with webhooks processed after catalog snapshot deployment; earlier
-            webhook evidence is not backfilled.
-          </p>
-        </section>
-      ) : (
-        <ol>
-          {entries.map((entry) => (
-            <li key={entry.id}>
-              <strong>
-                {ACTION_LABELS[entry.action]}{" "}
-                {entry.resourceType === "PRODUCT" ? "product" : "collection"}
-              </strong>{" "}
-              <Link
-                to={`/app/catalog/${entry.resourceType}/${encodeURIComponent(entry.resourceId)}`}
-              >
-                {entry.resourceId}
-              </Link>
-              {" — "}
-              <time dateTime={effectiveTime(entry).toISOString()}>
-                {effectiveTime(entry).toLocaleString()}
-              </time>{" "}
-              <span>({entry.isDeleted ? "Deletion tombstone" : "Active snapshot"})</span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {hasNextPage && nextCursor ? (
-        <p>
-          <Link to={`?${moreParams.toString()}`}>Load more</Link>
-        </p>
-      ) : null}
-    </main>
+      </Form></BlockStack></Card>
+      </BlockStack>
   );
+  return standalone ? <Page title="Catalog activity"
+    subtitle="Review recent product and collection changes recorded from Shopify.">{content}</Page> : content;
 }
 
 export function CatalogFindingActivityView({
@@ -176,21 +175,11 @@ export function CatalogFindingActivityView({
   const moreParams = paginationParams(search, "findingCursor", page.nextCursor);
   return (
     <section aria-labelledby="finding-activity-heading">
-      <h2 id="finding-activity-heading">Recent catalog finding activity</h2>
-      <dl>
-        <dt>Candidates analyzed</dt>
-        <dd>{page.candidateCount}</dd>
-        <dt>Comparable updates</dt>
-        <dd>{page.comparableCount}</dd>
-        <dt>Skipped candidates</dt>
-        <dd>{page.skippedCount}</dd>
-        <dt>Comparisons with findings</dt>
-        <dd>{page.findingBearingCount}</dd>
-      </dl>
+      <h2 id="finding-activity-heading">Recent findings</h2>
       {page.candidateCount === 0 ? (
-        <p>No catalog activity is available in this window.</p>
+        <p>Findings will appear after catalog activity is recorded.</p>
       ) : page.entries.length === 0 ? (
-        <p>No deterministic findings matched the recent comparable catalog updates.</p>
+        <><h3>No findings in recent activity</h3><p>No findings were detected in the recent activity reviewed. Comparison requires more than one recorded state for the same resource.</p></>
       ) : (
         <ol>
           {page.entries.map((entry) => (
@@ -244,8 +233,8 @@ export function CatalogDetectionOverviewView({page, filters = {}, search = ""}: 
   const retained = new URLSearchParams(search);
   for (const name of ["overviewCursor", "resourceType", "findingCode"]) retained.delete(name);
   return <section aria-labelledby="detection-overview-heading">
-    <h2 id="detection-overview-heading">Catalog detection overview</h2>
-    <p>Showing deterministic findings calculated on demand from the bounded recent candidate window.</p>
+    <h2 id="detection-overview-heading">Changes to inspect</h2>
+    <p>Findings are calculated from recent recorded changes. Older activity may not be included.</p>
     <Form method="get">
       {[...retained.entries()].map(([name, value], index) =>
         <input key={`${name}:${index}`} type="hidden" name={name} value={value} />)}
@@ -253,32 +242,28 @@ export function CatalogDetectionOverviewView({page, filters = {}, search = ""}: 
         <option value="">All</option><option value="PRODUCT">Product</option><option value="COLLECTION">Collection</option>
       </select></label>{" "}
       <label>Finding{" "}<select name="findingCode" defaultValue={filters.findingCode ?? ""}>
-        <option value="">All deterministic findings</option>
-        {CATALOG_COMPARISON_FINDING_CODES.map((code) => <option key={code} value={code}>{code}</option>)}
+        <option value="">All findings</option>
+        {CATALOG_COMPARISON_FINDING_CODES.map((code) => <option key={code} value={code}>{code.replaceAll("_", " ").toLowerCase()}</option>)}
       </select></label>{" "}<button type="submit">Apply overview filters</button>
     </Form>
     {(filters.resourceType || filters.findingCode) ? <p>Active overview filters: {[
       filters.resourceType, filters.findingCode,
     ].filter(Boolean).join(" · ")}</p> : <p>Active overview filters: none</p>}
-    <dl><dt>Candidates analyzed</dt><dd>{page.candidateCount}</dd>
-      <dt>Comparable updates</dt><dd>{page.comparableCount}</dd>
-      <dt>Skipped candidates</dt><dd>{page.skippedCount}</dd></dl>
-    {page.groups.length === 0 ? <p>No deterministic findings matched this bounded candidate window.</p> :
+    {page.groups.length === 0 ? <><h3>No findings in recent activity</h3><p>No findings were detected in the recent activity reviewed. Some comparisons need another recorded state for the same resource.</p></> :
       page.groups.map((group) => <article key={group.code}>
-        <h3>{group.label}</h3><p><code>{group.code}</code></p>
-        <p>{group.comparisonCount} exact {group.comparisonCount === 1 ? "comparison" : "comparisons"} · {group.distinctResourceCount} distinct {group.distinctResourceCount === 1 ? "resource" : "resources"} · {group.returnedEvidenceCount} returned evidence {group.returnedEvidenceCount === 1 ? "signal" : "signals"}</p>
-        <p>Latest exact occurrence: <time dateTime={group.latestOccurrence.effectiveAt.toISOString()}>{group.latestOccurrence.effectiveAt.toLocaleString()}</time></p>
-        <p>{group.structurallyTruncatedComparisonCount} contributing {group.structurallyTruncatedComparisonCount === 1 ? "comparison was" : "comparisons were"} structurally truncated.</p>
-        {group.structurallyTruncatedComparisonCount ? <p>Findings are based on returned structural entries; evidence may be incomplete for structurally truncated comparisons.</p> : null}
+        <h3>{group.label}</h3>
+        <p>Seen in {group.comparisonCount} recent {group.comparisonCount === 1 ? "change" : "changes"} across {group.distinctResourceCount} {group.distinctResourceCount === 1 ? "resource" : "resources"}.</p>
+        <p>Most recently detected: <time dateTime={group.latestOccurrence.effectiveAt.toISOString()}>{group.latestOccurrence.effectiveAt.toLocaleString()}</time></p>
+        {group.structurallyTruncatedComparisonCount ? <p>Some contributing changes reached the review limit, so these findings may be incomplete.</p> : null}
         <ul>{group.occurrences.map((occurrence) => <li key={occurrence.currentSnapshotId}>
           <Link to={`/app/catalog/${encodeURIComponent(occurrence.resourceType)}/${encodeURIComponent(occurrence.resourceId)}?snapshot=${encodeURIComponent(occurrence.currentSnapshotId)}`}>
             {occurrence.resourceType === "PRODUCT" ? "Product" : "Collection"} {occurrence.resourceId} — <time dateTime={occurrence.effectiveAt.toISOString()}>{occurrence.effectiveAt.toLocaleString()}</time>
-          </Link>{" — "}{occurrence.returnedEvidenceCount} returned evidence {occurrence.returnedEvidenceCount === 1 ? "signal" : "signals"}{occurrence.structurallyTruncated ? " — structurally truncated" : ""}
+          </Link>{occurrence.structurallyTruncated ? " — Review may be incomplete" : ""}
         </li>)}</ul>
-        {group.occurrencesTruncated ? <p>Occurrence list truncated; additional contributing comparisons in this candidate window are not shown.</p> : null}
+        {group.occurrencesTruncated ? <p>Additional recent occurrences are not shown.</p> : null}
       </article>)}
-    {page.hasNextPage ? <p>Older candidate snapshots were not analyzed on this page; this overview is not catalog-wide.</p> : null}
-    {page.hasNextPage && page.nextCursor ? <p><Link to={`?${moreParams.toString()}`}>More overview candidates</Link></p> : null}
+    {page.hasNextPage ? <p>Older recorded changes are not included on this page, so this is not a catalog-wide total.</p> : null}
+    {page.hasNextPage && page.nextCursor ? <p><Link to={`?${moreParams.toString()}`}>Review older changes</Link></p> : null}
   </section>;
 }
 
@@ -302,10 +287,12 @@ export default function CatalogTimelineRoute() {
     occurrences: group.occurrences.map((occurrence) => ({...occurrence, effectiveAt: new Date(occurrence.effectiveAt)})),
   }))};
   return (
-    <>
-      <CatalogTimelineView {...page} entries={entries} filters={filters} search={search} />
-      <CatalogFindingActivityView page={activity} search={search} />
-      <CatalogDetectionOverviewView page={overview} filters={overviewFilters} search={search} />
-    </>
+    <Page title="Catalog activity" subtitle="Review recent product and collection changes recorded from Shopify.">
+      <BlockStack gap="500">
+        <CatalogTimelineView {...page} entries={entries} filters={filters} search={search} standalone={false} />
+        <Card><CatalogFindingActivityView page={activity} search={search} /></Card>
+        <Card><CatalogDetectionOverviewView page={overview} filters={overviewFilters} search={search} /></Card>
+      </BlockStack>
+    </Page>
   );
 }

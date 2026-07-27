@@ -2,6 +2,8 @@ import {CatalogResourceType} from "@prisma/client";
 import type {ReactNode} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {createRoutesStub} from "react-router";
+import {AppProvider} from "@shopify/polaris";
+import enTranslations from "@shopify/polaris/locales/en.json";
 import {describe, expect, it, vi} from "vitest";
 vi.mock("../shopify.server", () => ({authenticate: {admin: vi.fn()}}));
 import {CatalogDetectionOverviewView, CatalogFindingActivityView, CatalogTimelineView} from "../routes/app.catalog";
@@ -38,7 +40,7 @@ const emptySummary = {
 
 function renderRoute(element: ReactNode) {
   const Stub = createRoutesStub([{path: "/", Component: () => element}]);
-  return renderToStaticMarkup(<Stub initialEntries={["/"]} />);
+  return renderToStaticMarkup(<AppProvider i18n={enTranslations}><Stub initialEntries={["/"]} /></AppProvider>);
 }
 
 describe("merchant catalog routes", () => {
@@ -54,14 +56,13 @@ describe("merchant catalog routes", () => {
           occurrences: [{currentSnapshotId: "snapshot/id?x", resourceType: CatalogResourceType.COLLECTION,
             resourceId: "gid://Collection/a?x", effectiveAt: new Date("2026-07-26T12:00:00Z"),
             returnedEvidenceCount: 2, structurallyTruncated: true}], occurrencesTruncated: true}]}} />);
-    expect(html).toContain("Catalog detection overview");
-    expect(html).toContain("12 exact comparisons"); expect(html).toContain("8 distinct resources");
-    expect(html).toContain("27 returned evidence signals"); expect(html).toContain("Latest exact occurrence");
-    expect(html).toContain("3 contributing comparisons were structurally truncated");
-    expect(html).toContain("Occurrence list truncated"); expect(html).toContain("not catalog-wide");
-    expect(html).toContain("COLLECTION_RULES_CHANGED");
+    expect(html).toContain("Changes to inspect");
+    expect(html).toContain("12 recent changes"); expect(html).toContain("8 resources");
+    expect(html).toContain("Most recently detected");
+    expect(html).toContain("Some contributing changes reached the review limit");
+    expect(html).toContain("Additional recent occurrences"); expect(html).toContain("not a catalog-wide total");
     expect(html).toContain("COLLECTION/gid%3A%2F%2FCollection%2Fa%3Fx?snapshot=snapshot%2Fid%3Fx");
-    const href = html.match(/href="([^"]+)"[^>]*>More overview candidates/)?.[1];
+    const href = html.match(/href="([^"]+)"[^>]*>Review older changes/)?.[1];
     expect(href).toContain("cursor=time"); expect(href).toContain("findingCursor=activity");
     expect(href).toContain("overviewCursor=next+overview"); expect(href?.match(/overviewCursor=/g)).toHaveLength(1);
     for (const excluded of ["severity", "risk", "trend", "anomaly", "incident", "policy", "recommendation", "recovery", "webhook payload", "state hash", "access token", "shop identity"])
@@ -71,7 +72,7 @@ describe("merchant catalog routes", () => {
   it("renders detection empty state and resets its cursor when filters are submitted", () => {
     const html = renderRoute(<CatalogDetectionOverviewView search="?cursor=time&findingCursor=activity&overviewCursor=old&view=compact"
       page={{candidateCount: 1, comparableCount: 1, skippedCount: 0, groups: [], hasNextPage: false}} />);
-    expect(html).toContain("No deterministic findings matched this bounded candidate window");
+    expect(html).toContain("No findings in recent activity");
     const form = html.match(/<form[^>]*>([\s\S]*?)<\/form>/)?.[1] ?? "";
     expect(form).not.toContain('name="overviewCursor"');
     expect(form).toContain('name="cursor"'); expect(form).toContain('name="findingCursor"');
@@ -82,7 +83,7 @@ describe("merchant catalog routes", () => {
       search="?cursor=one&cursor=two&findingCursor=activity&overviewCursor=old"
       page={{candidateCount: 1, comparableCount: 1, skippedCount: 0, groups: [], hasNextPage: true,
         nextCursor: "next"}} />);
-    const overviewHref = overview.match(/href="([^"]+)"[^>]*>More overview candidates/)?.[1];
+    const overviewHref = overview.match(/href="([^"]+)"[^>]*>Review older changes/)?.[1];
     expect(overviewHref).not.toMatch(/(?:\?|&amp;)cursor=/);
     expect(overviewHref).toContain("findingCursor=activity");
     expect(overviewHref).toContain("overviewCursor=next");
@@ -131,9 +132,7 @@ describe("merchant catalog routes", () => {
       </>,
     );
     expect(html).toContain("Catalog activity");
-    expect(html).toContain("Recent catalog finding activity");
-    expect(html).toContain("Candidates analyzed");
-    expect(html).toContain("Comparable updates");
+    expect(html).toContain("Recent findings");
     expect(html).toContain("Collection rules changed");
     expect(html).toContain("1 returned evidence signal");
     expect(html).toContain("findings and returned evidence may be incomplete");
@@ -161,21 +160,21 @@ describe("merchant catalog routes", () => {
           }}
         />,
       ),
-    ).toContain("No catalog activity is available");
+    ).toContain("Findings will appear after catalog activity is recorded");
     expect(
       renderRoute(
         <CatalogFindingActivityView
           page={{...page, hasNextPage: false, entries: [], findingBearingCount: 0}}
         />,
       ),
-    ).toContain("No deterministic findings matched the recent comparable catalog updates");
+    ).toContain("No findings in recent activity");
   });
   it("renders safe timeline metadata, encoded links, filters, and cursor navigation", () => {
     const html = renderRoute(
       <CatalogTimelineView entries={[entry]} hasNextPage nextCursor="opaque cursor" />,
     );
     expect(html).toContain("Catalog activity");
-    expect(html).toContain("Deleted product");
+    expect(html).toContain("Product deleted");
     expect(html).toContain("gid%3A%2F%2Fshopify%2FProduct%2F1%3Fprivate%3Dx");
     expect(html).toContain("Load more");
     expect(html).not.toContain("secondary-hash");
@@ -193,10 +192,11 @@ describe("merchant catalog routes", () => {
         search="?cursor=old&cursor=duplicate&findingCursor=finding-page&overviewCursor=overview-page&view=compact"
       />,
     );
-    const href = html.match(/href="([^"]+)"[^>]*>Load more/)?.[1];
+    const href = [...html.matchAll(/href="([^"]+)"/g)]
+      .map((match) => match[1]).find((value) => value?.includes("cursor=next+timeline"));
 
     expect(href).toBe(
-      "/?findingCursor=finding-page&amp;overviewCursor=overview-page&amp;view=compact&amp;resourceType=PRODUCT&amp;cursor=next+timeline",
+      "?findingCursor=finding-page&amp;overviewCursor=overview-page&amp;view=compact&amp;resourceType=PRODUCT&amp;cursor=next+timeline",
     );
     expect(href?.match(/cursor=/g)).toHaveLength(1);
     expect(href?.match(/findingCursor=/g)).toHaveLength(1);
@@ -205,7 +205,7 @@ describe("merchant catalog routes", () => {
 
   it("renders the post-deployment empty state", () => {
     const html = renderRoute(<CatalogTimelineView entries={[]} hasNextPage={false} />);
-    expect(html).toContain("No catalog activity yet");
+    expect(html).toContain("Waiting for catalog activity");
     expect(html).toContain("not backfilled");
   });
 
@@ -224,7 +224,7 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("Product history");
     expect(html).toContain("Current status:");
     expect(html).toContain("Deleted");
-    expect(html).toContain("Deletion tombstone");
+    expect(html).toContain("(Deleted)");
     expect(html).toContain("Back to catalog activity");
     expect(html).not.toContain("secondary-hash");
     expect(html).toContain("View changes");
@@ -270,9 +270,9 @@ describe("merchant catalog routes", () => {
         }}
       />,
     );
-    expect(html).toContain("Recent historical findings");
-    expect(html).toContain("most recent 10 adjacent comparisons");
-    expect(html).toContain("Older catalog history was not analyzed");
+    expect(html).toContain("Findings in recent history");
+    expect(html).toContain("up to 10 recent recorded changes");
+    expect(html).toContain("Older catalog history is not included");
     expect(html).toContain("2 of 7");
     expect(html).toContain(">3<");
     expect(html).toContain(
@@ -287,14 +287,14 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("?snapshot=older%3Fprivate%3Dx");
     expect(html).not.toContain("previous-1");
     expect(renderRoute(<HistoricalFindingsView summary={emptySummary} />)).toContain(
-      "No comparable updates were available",
+      "Comparison requires more than one recorded state",
     );
     const noFindings = renderRoute(
       <HistoricalFindingsView
         summary={{...emptySummary, comparablePairCount: 1, adjacentPairCount: 1}}
       />,
     );
-    expect(noFindings).toContain("No deterministic findings matched");
+    expect(noFindings).toContain("No findings were detected");
     expect(noFindings).not.toContain("Historical finding occurrences");
     expect(renderRoute(<HistoricalFindingsView summary={emptySummary} />)).not.toContain(
       "Historical finding occurrences",
@@ -359,11 +359,11 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("Other: 1");
     expect(html).toContain("/variants/0/price");
     expect(html).toContain("Before");
-    expect(html).toContain("Detected signals");
+    expect(html).toContain("Detected changes");
     expect(html).toContain("Product title changed: 1");
     expect(html).toContain("Variant price changed: 1");
     expect(html).toContain("Product content");
-    expect(html).toContain("Comparison findings");
+    expect(html).toContain("Findings");
     expect(html).toContain("Product identity fields changed");
     expect(html).toContain("Variant pricing fields changed");
     expect(html).toContain("Evidence count");
@@ -396,7 +396,7 @@ describe("merchant catalog routes", () => {
     const tombstone = renderRoute(
       <CatalogDiffView diff={{...base, status: "DELETED_TOMBSTONE"}} />,
     );
-    expect(tombstone).toContain("partial tombstone");
+    expect(tombstone).toContain("deletion record");
     expect(tombstone).not.toContain("Changed paths returned");
     const truncated = renderRoute(
       <CatalogDiffView
@@ -404,13 +404,13 @@ describe("merchant catalog routes", () => {
       />,
     );
     expect(truncated).toContain("Results are truncated");
-    expect(truncated).toContain("Signals are based only on the returned structural changes");
-    expect(truncated).toContain("No deterministic signals matched the returned structural changes");
+    expect(truncated).toContain("Detected changes are based only on the fields returned");
+    expect(truncated).toContain("No notable change patterns matched");
     expect(truncated).toContain(
-      "Findings are based only on the returned structural changes because the comparison was truncated.",
+      "Findings are based only on the fields returned",
     );
     expect(truncated).toContain(
-      "No deterministic comparison findings matched the returned signals.",
+      "No findings were detected in this comparison.",
     );
   });
 
@@ -444,7 +444,7 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("/rules/0/condition");
     expect(html).toContain("tag");
     expect(html).toContain("Removed");
-    expect(html).toContain("Detected signals");
+    expect(html).toContain("Detected changes");
     expect(html).toContain("Collection title changed: 1");
     expect(html).toContain("Collection rules changed: 1");
     expect(html).toContain("Collection media changed: 1");
@@ -476,7 +476,7 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("Other");
     expect(html).toContain("/updated_at");
     expect(html).toContain("/future_field");
-    expect(html).toContain("No deterministic signals matched the returned structural changes.");
+    expect(html).toContain("No notable change patterns matched the reviewed fields.");
     for (const excluded of [
       "severity",
       "priority",

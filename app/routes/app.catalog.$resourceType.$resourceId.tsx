@@ -27,10 +27,10 @@ const labels = {CREATED: "Created", UPDATED: "Updated", DELETED: "Deleted"} as c
 const operations = {ADDED: "Added", REMOVED: "Removed", CHANGED: "Changed"} as const;
 const effectiveTime = (entry: CatalogResourceHistory["entries"][number]) => entry.occurredAt ?? entry.receivedAt;
 const explanations = {
-  NO_PREVIOUS_SNAPSHOT: "No prior snapshot exists, so there is no comparison baseline.",
-  CREATED_WITHOUT_BASELINE: "Creation has no active comparison baseline.",
-  DELETED_TOMBSTONE: "Deletion is represented by a partial tombstone and is not structurally compared.",
-  PREVIOUS_TOMBSTONE: "The previous state is a deletion tombstone, so recreation has no comparable baseline.",
+  NO_PREVIOUS_SNAPSHOT: "Comparison needs more than one recorded state for this resource.",
+  CREATED_WITHOUT_BASELINE: "A newly recorded resource does not yet have an earlier state to compare.",
+  DELETED_TOMBSTONE: "This deletion record does not contain a complete catalog state to compare.",
+  PREVIOUS_TOMBSTONE: "The previous record was a deletion, so this state cannot be compared with it.",
   LIMIT_EXCEEDED: "A safety limit prevented a complete comparison.",
   INVALID_LIFECYCLE: "This snapshot has an unsupported or inconsistent lifecycle and cannot be compared safely.",
 } as const;
@@ -43,7 +43,7 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
   const findings = deriveCatalogComparisonFindings(diff.resourceType, signals, {truncated: diff.truncated});
   const signalLabels = new Map(signals.map((signal) => [signal.code, signal.label]));
   return <section aria-labelledby="changes-heading">
-    <h2 id="changes-heading">Structural changes</h2>
+    <h2 id="changes-heading">Recorded changes</h2>
     <p><strong>Action:</strong> {labels[diff.currentAction]}</p>
     <p><strong>Current event:</strong> <time dateTime={diff.currentEffectiveAt.toISOString()}>{diff.currentEffectiveAt.toLocaleString()}</time></p>
     {diff.previousEffectiveAt ? <p><strong>Previous event:</strong> <time dateTime={diff.previousEffectiveAt.toISOString()}>{diff.previousEffectiveAt.toLocaleString()}</time></p> : null}
@@ -54,7 +54,7 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
         <ul>{summary.map((item) => <li key={item.category}>{item.label}: {item.count}</li>)}</ul>
       </div> : null}
       {diff.truncated ? <p role="alert">{explanations.LIMIT_EXCEEDED} Results are truncated.</p> : null}
-      {!diff.entries.length ? <p>No structural changes were found.</p> : <table>
+      {!diff.entries.length ? <p>No field changes were found.</p> : <table>
         <thead><tr><th>Category</th><th>Path</th><th>Operation</th><th>Before</th><th>After</th></tr></thead>
         <tbody>{diff.entries.map((entry) => {
           const classification = classifyCatalogDiffEntry(diff.resourceType, entry);
@@ -66,9 +66,9 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
         })}</tbody>
       </table>}
       <section aria-labelledby="signals-heading">
-        <h3 id="signals-heading">Detected signals</h3>
-        {diff.truncated ? <p>Signals are based only on the returned structural changes because the comparison was truncated.</p> : null}
-        {!signals.length ? <p>No deterministic signals matched the returned structural changes.</p> : <>
+        <h3 id="signals-heading">Detected changes</h3>
+        {diff.truncated ? <p>Detected changes are based only on the fields returned before the review limit was reached.</p> : null}
+        {!signals.length ? <p>No notable change patterns matched the reviewed fields.</p> : <>
           <ul>{signalSummary.map((item) => <li key={item.code}>{item.label}: {item.count}</li>)}</ul>
           <table>
             <thead><tr><th>Signal</th><th>Category</th><th>Path</th><th>Operation</th><th>Before</th><th>After</th></tr></thead>
@@ -84,9 +84,9 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
         </>}
       </section>
       <section aria-labelledby="findings-heading">
-        <h3 id="findings-heading">Comparison findings</h3>
-        {diff.truncated ? <p>Findings are based only on the returned structural changes because the comparison was truncated.</p> : null}
-        {!findings.length ? <p>No deterministic comparison findings matched the returned signals.</p> : <table>
+        <h3 id="findings-heading">Findings</h3>
+        {diff.truncated ? <p>Findings are based only on the fields returned before the review limit was reached.</p> : null}
+        {!findings.length ? <p>No findings were detected in this comparison.</p> : <table>
           <thead><tr><th>Finding</th><th>Evidence signals</th><th>Evidence count</th></tr></thead>
           <tbody>{findings.map((finding) => <tr key={finding.code}><td>{finding.label}</td>
             <td>{finding.evidenceSignalCodes.map((code) => signalLabels.get(code)).join(", ")}</td><td>{finding.evidenceCount}</td></tr>)}</tbody>
@@ -99,19 +99,19 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
 export function HistoricalFindingsView({summary}: {summary: CatalogHistoricalFindingSummary}) {
   const truncated = summary.truncatedComparisonCount;
   return <section aria-labelledby="historical-findings-heading">
-    <h2 id="historical-findings-heading">Recent historical findings</h2>
-    <p>Historical findings are based on the most recent {summary.requestedComparisonLimit} adjacent comparisons.</p>
-    {!summary.historyExhausted ? <p>Older catalog history was not analyzed in this summary.</p> : null}
+    <h2 id="historical-findings-heading">Findings in recent history</h2>
+    <p>Findings are based on up to {summary.requestedComparisonLimit} recent recorded changes.</p>
+    {!summary.historyExhausted ? <p>Older catalog history is not included in this summary.</p> : null}
     <dl>
-      <dt>Snapshots considered</dt><dd>{summary.snapshotCount}</dd>
-      <dt>Adjacent comparisons examined</dt><dd>{summary.adjacentPairCount}</dd>
-      <dt>Comparable updates</dt><dd>{summary.comparablePairCount}</dd>
-      <dt>Non-comparable pairs</dt><dd>{summary.skippedPairCount}</dd>
-      <dt>Structurally truncated comparisons</dt><dd>{truncated}</dd>
+      <dt>Recorded states reviewed</dt><dd>{summary.snapshotCount}</dd>
+      <dt>Changes reviewed</dt><dd>{summary.adjacentPairCount}</dd>
+      <dt>Changes compared</dt><dd>{summary.comparablePairCount}</dd>
+      <dt>Changes without enough history</dt><dd>{summary.skippedPairCount}</dd>
+      <dt>Comparisons reaching the review limit</dt><dd>{truncated}</dd>
     </dl>
     {truncated > 0 ? <p>{truncated} analyzed {truncated === 1 ? "comparison was" : "comparisons were"} structurally truncated; {truncated === 1 ? "its" : "their"} findings may be incomplete.</p> : null}
-    {summary.comparablePairCount === 0 ? <p>No comparable updates were available in the analyzed snapshot window.</p> :
-      summary.findings.length === 0 ? <p>No deterministic findings matched the analyzed comparable updates.</p> : <>
+    {summary.comparablePairCount === 0 ? <p>Comparison requires more than one recorded state for the same resource.</p> :
+      summary.findings.length === 0 ? <p>No findings were detected in the recent history reviewed.</p> : <>
       <table>
         <thead><tr><th>Finding</th><th>Comparisons observed</th><th>Evidence signals</th></tr></thead>
         <tbody>{summary.findings.map((finding) => <tr key={finding.code}><td>{finding.label}</td>
@@ -119,7 +119,7 @@ export function HistoricalFindingsView({summary}: {summary: CatalogHistoricalFin
       </table>
       <div aria-label="Historical finding occurrences">{summary.findings.map((finding) => <section key={finding.code}>
         <h3>{finding.label}</h3>
-        <p>{finding.comparisonCount} of {summary.comparablePairCount} comparable updates · {finding.evidenceCount} evidence {finding.evidenceCount === 1 ? "signal" : "signals"}</p>
+        <p>Detected in {finding.comparisonCount} of {summary.comparablePairCount} reviewed changes.</p>
         <ul>{finding.occurrences.map((occurrence) => <li key={occurrence.currentSnapshotId}>
           <time dateTime={occurrence.currentEffectiveAt.toISOString()}>{occurrence.currentEffectiveAt.toLocaleString()}</time>{" — "}
           {occurrence.evidenceCount} {occurrence.truncated ? "returned " : ""}evidence {occurrence.evidenceCount === 1 ? "signal" : "signals"}
@@ -144,7 +144,7 @@ export function CatalogResourceHistoryView({history, historicalFindings, diff}: 
     <ol>{history.entries.map((entry) => <li key={entry.id}>
       <strong>{labels[entry.action]}</strong>{" — "}
       <time dateTime={effectiveTime(entry).toISOString()}>{effectiveTime(entry).toLocaleString()}</time>
-      {entry.isDeleted ? " (Deletion tombstone)" : ""}{" "}
+      {entry.isDeleted ? " (Deleted)" : ""}{" "}
       <Link to={`?snapshot=${encodeURIComponent(entry.id)}`}>View changes</Link>
     </li>)}</ol>
   </main>;
