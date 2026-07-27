@@ -35,13 +35,13 @@ npm run setup
 
 ### Environment variables
 
-| Variable | Purpose |
-| --- | --- |
-| `SHOPIFY_API_KEY` | Public client ID for the selected Shopify app. |
-| `SHOPIFY_API_SECRET` | Secret supplied by Shopify; never commit it. |
-| `SHOPIFY_APP_URL` | Public HTTPS application URL. |
-| `SCOPES` | Must remain `read_products` for this slice. |
-| `DATABASE_URL` | Prisma URL; use `file:./dev.sqlite` locally. |
+| Variable             | Purpose                                        |
+| -------------------- | ---------------------------------------------- |
+| `SHOPIFY_API_KEY`    | Public client ID for the selected Shopify app. |
+| `SHOPIFY_API_SECRET` | Secret supplied by Shopify; never commit it.   |
+| `SHOPIFY_APP_URL`    | Public HTTPS application URL.                  |
+| `SCOPES`             | Must remain `read_products` for this slice.    |
+| `DATABASE_URL`       | Prisma URL; use `file:./dev.sqlite` locally.   |
 
 `.env.example` contains placeholders only. When using `shopify app dev`, the CLI supplies Shopify values to the web process. Link the repository's placeholder configuration to an app before development:
 
@@ -62,16 +62,16 @@ The landing screen remains intentionally minimal. `/app/diagnostics` is an inter
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `npm run dev` | Start the Shopify CLI development flow and embedded app tunnel. |
-| `npm run setup` | Generate Prisma Client and apply migrations. |
-| `npm run build` | Produce the React Router server/client bundle. |
-| `npm run typecheck` | Generate route types and run strict TypeScript checks. |
-| `npm run lint` | Run ESLint. |
-| `npm test` | Run the test suite once with Vitest. |
-| `npm run check` | Run typecheck, lint, tests, and build in sequence. |
-| `npm start` | Serve a previously built production bundle. |
+| Command             | Description                                                     |
+| ------------------- | --------------------------------------------------------------- |
+| `npm run dev`       | Start the Shopify CLI development flow and embedded app tunnel. |
+| `npm run setup`     | Generate Prisma Client and apply migrations.                    |
+| `npm run build`     | Produce the React Router server/client bundle.                  |
+| `npm run typecheck` | Generate route types and run strict TypeScript checks.          |
+| `npm run lint`      | Run ESLint.                                                     |
+| `npm test`          | Run the test suite once with Vitest.                            |
+| `npm run check`     | Run typecheck, lint, tests, and build in sequence.              |
+| `npm start`         | Serve a previously built production bundle.                     |
 
 Always use `npm run check` as the repository quality gate before pushing.
 
@@ -156,3 +156,9 @@ The factual summary counts comparable comparisons separately from their returned
 SKU-011 remains inside **Detect** and makes each bounded historical finding traceable to the exact adjacent comparisons where it appeared. Each occurrence reuses SKU-009's finding evidence count and links to the existing structural comparison; truncated evidence is explicitly qualified as returned and potentially incomplete.
 
 Occurrences remain bounded, read-only, calculated on demand by SKU-010's single exact-resource query, and non-persisted. The summary includes no raw snapshot state and introduces no frequency or trend classification, anomaly, severity, policy, incident, recommendation, recovery, AI, or automation.
+
+## SKU-012 bounded catalog finding activity
+
+SKU-012 remains inside **Detect**. Recent catalog-wide finding activity is calculated on demand by one bounded, shop-scoped read that selects current snapshot candidates and resolves each exact immediate predecessor for the same resource. It reuses the shared lifecycle gate, structural diff, deterministic signals, and comparison findings; each displayed entry is a factual occurrence of findings in one exact adjacent comparison.
+
+Cursor pagination follows candidate snapshots, including skipped and comparable zero-finding candidates; comparisons without findings are not displayed. Structural truncation explicitly limits the completeness of returned findings and evidence. The feed is read-only and non-persisted and introduces no frequency, trend, anomaly, severity, policy, incident, recommendation, recovery, AI, or automation.
