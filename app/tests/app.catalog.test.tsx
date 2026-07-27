@@ -4,7 +4,7 @@ import {renderToStaticMarkup} from "react-dom/server";
 import {createRoutesStub} from "react-router";
 import {describe, expect, it, vi} from "vitest";
 vi.mock("../shopify.server", () => ({authenticate: {admin: vi.fn()}}));
-import {CatalogFindingActivityView, CatalogTimelineView} from "../routes/app.catalog";
+import {CatalogDetectionOverviewView, CatalogFindingActivityView, CatalogTimelineView} from "../routes/app.catalog";
 import {
   CatalogDiffView,
   CatalogResourceHistoryView,
@@ -42,6 +42,60 @@ function renderRoute(element: ReactNode) {
 }
 
 describe("merchant catalog routes", () => {
+  it("renders factual bounded detection groups, encoded drilldown, three qualifications, and independent pagination", () => {
+    const html = renderRoute(<CatalogDetectionOverviewView search="?cursor=time&page=x&findingCursor=activity&overviewCursor=old&overviewCursor=duplicate&resourceType=COLLECTION&findingCode=COLLECTION_RULES_CHANGED"
+      filters={{resourceType: CatalogResourceType.COLLECTION, findingCode: "COLLECTION_RULES_CHANGED"}}
+      page={{candidateCount: 25, comparableCount: 20, skippedCount: 5, hasNextPage: true, nextCursor: "next overview",
+        groups: [{code: "COLLECTION_RULES_CHANGED", label: "Collection rules changed", comparisonCount: 12,
+          distinctResourceCount: 8, returnedEvidenceCount: 27, structurallyTruncatedComparisonCount: 3,
+          latestOccurrence: {currentSnapshotId: "snapshot/id?x", resourceType: CatalogResourceType.COLLECTION,
+            resourceId: "gid://Collection/a?x", effectiveAt: new Date("2026-07-26T12:00:00Z"),
+            returnedEvidenceCount: 2, structurallyTruncated: true},
+          occurrences: [{currentSnapshotId: "snapshot/id?x", resourceType: CatalogResourceType.COLLECTION,
+            resourceId: "gid://Collection/a?x", effectiveAt: new Date("2026-07-26T12:00:00Z"),
+            returnedEvidenceCount: 2, structurallyTruncated: true}], occurrencesTruncated: true}]}} />);
+    expect(html).toContain("Catalog detection overview");
+    expect(html).toContain("12 exact comparisons"); expect(html).toContain("8 distinct resources");
+    expect(html).toContain("27 returned evidence signals"); expect(html).toContain("Latest exact occurrence");
+    expect(html).toContain("3 contributing comparisons were structurally truncated");
+    expect(html).toContain("Occurrence list truncated"); expect(html).toContain("not catalog-wide");
+    expect(html).toContain("COLLECTION_RULES_CHANGED");
+    expect(html).toContain("COLLECTION/gid%3A%2F%2FCollection%2Fa%3Fx?snapshot=snapshot%2Fid%3Fx");
+    const href = html.match(/href="([^"]+)"[^>]*>More overview candidates/)?.[1];
+    expect(href).toContain("cursor=time"); expect(href).toContain("findingCursor=activity");
+    expect(href).toContain("overviewCursor=next+overview"); expect(href?.match(/overviewCursor=/g)).toHaveLength(1);
+    for (const excluded of ["severity", "risk", "trend", "anomaly", "incident", "policy", "recommendation", "recovery", "webhook payload", "state hash", "access token", "shop identity"])
+      expect(html.toLowerCase()).not.toContain(excluded);
+  });
+
+  it("renders detection empty state and resets its cursor when filters are submitted", () => {
+    const html = renderRoute(<CatalogDetectionOverviewView search="?cursor=time&findingCursor=activity&overviewCursor=old&view=compact"
+      page={{candidateCount: 1, comparableCount: 1, skippedCount: 0, groups: [], hasNextPage: false}} />);
+    expect(html).toContain("No deterministic findings matched this bounded candidate window");
+    const form = html.match(/<form[^>]*>([\s\S]*?)<\/form>/)?.[1] ?? "";
+    expect(form).not.toContain('name="overviewCursor"');
+    expect(form).toContain('name="cursor"'); expect(form).toContain('name="findingCursor"');
+  });
+
+  it("drops malformed duplicate non-target cursors from independent pagination links", () => {
+    const overview = renderRoute(<CatalogDetectionOverviewView
+      search="?cursor=one&cursor=two&findingCursor=activity&overviewCursor=old"
+      page={{candidateCount: 1, comparableCount: 1, skippedCount: 0, groups: [], hasNextPage: true,
+        nextCursor: "next"}} />);
+    const overviewHref = overview.match(/href="([^"]+)"[^>]*>More overview candidates/)?.[1];
+    expect(overviewHref).not.toMatch(/(?:\?|&amp;)cursor=/);
+    expect(overviewHref).toContain("findingCursor=activity");
+    expect(overviewHref).toContain("overviewCursor=next");
+
+    const activity = renderRoute(<CatalogFindingActivityView search="?cursor=timeline&overviewCursor=a&overviewCursor=b"
+      page={{candidateCount: 1, comparableCount: 0, skippedCount: 1, findingBearingCount: 0,
+        entries: [], hasNextPage: true, nextCursor: "next"}} />);
+    const activityHref = activity.match(/href="([^"]+)"[^>]*>More finding activity/)?.[1];
+    expect(activityHref).toContain("cursor=timeline");
+    expect(activityHref).not.toContain("overviewCursor");
+    expect(activityHref).toContain("findingCursor=next");
+  });
+
   it("renders separate bounded finding activity, safe exact links, qualification, pagination, and empty states", () => {
     const page = {
       candidateCount: 2,
@@ -72,7 +126,7 @@ describe("merchant catalog routes", () => {
         <CatalogTimelineView entries={[entry]} hasNextPage={false} />
         <CatalogFindingActivityView
           page={page}
-          search="?cursor=timeline&amp;resourceType=PRODUCT&amp;findingCursor=old"
+          search="?cursor=timeline&amp;resourceType=PRODUCT&amp;findingCursor=old&amp;findingCursor=duplicate&amp;overviewCursor=overview"
         />
       </>,
     );
@@ -88,6 +142,8 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("More finding activity");
     expect(html).toContain("cursor=timeline");
     expect(html).toContain("findingCursor=opaque");
+    expect(html).toContain("overviewCursor=overview");
+    expect(html.match(/findingCursor=opaque/g)).toHaveLength(1);
     expect(html).not.toContain("previous");
     expect(html).not.toContain("shop identity");
     expect(
@@ -134,16 +190,17 @@ describe("merchant catalog routes", () => {
         hasNextPage
         nextCursor="next timeline"
         filters={{resourceType: CatalogResourceType.PRODUCT}}
-        search="?cursor=old&findingCursor=finding-page&view=compact"
+        search="?cursor=old&cursor=duplicate&findingCursor=finding-page&overviewCursor=overview-page&view=compact"
       />,
     );
     const href = html.match(/href="([^"]+)"[^>]*>Load more/)?.[1];
 
     expect(href).toBe(
-      "/?findingCursor=finding-page&amp;view=compact&amp;resourceType=PRODUCT&amp;cursor=next+timeline",
+      "/?findingCursor=finding-page&amp;overviewCursor=overview-page&amp;view=compact&amp;resourceType=PRODUCT&amp;cursor=next+timeline",
     );
     expect(href?.match(/cursor=/g)).toHaveLength(1);
     expect(href?.match(/findingCursor=/g)).toHaveLength(1);
+    expect(href?.match(/overviewCursor=/g)).toHaveLength(1);
   });
 
   it("renders the post-deployment empty state", () => {
