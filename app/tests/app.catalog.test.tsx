@@ -127,6 +127,25 @@ describe("merchant catalog routes", () => {
     expect(html).not.toContain("processing error");
   });
 
+  it("preserves independent finding pagination when advancing the timeline", () => {
+    const html = renderRoute(
+      <CatalogTimelineView
+        entries={[entry]}
+        hasNextPage
+        nextCursor="next timeline"
+        filters={{resourceType: CatalogResourceType.PRODUCT}}
+        search="?cursor=old&findingCursor=finding-page&view=compact"
+      />,
+    );
+    const href = html.match(/href="([^"]+)"[^>]*>Load more/)?.[1];
+
+    expect(href).toBe(
+      "/?findingCursor=finding-page&amp;view=compact&amp;resourceType=PRODUCT&amp;cursor=next+timeline",
+    );
+    expect(href?.match(/cursor=/g)).toHaveLength(1);
+    expect(href?.match(/findingCursor=/g)).toHaveLength(1);
+  });
+
   it("renders the post-deployment empty state", () => {
     const html = renderRoute(<CatalogTimelineView entries={[]} hasNextPage={false} />);
     expect(html).toContain("No catalog activity yet");

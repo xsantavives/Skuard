@@ -37,13 +37,16 @@ export function CatalogTimelineView({
   hasNextPage,
   nextCursor,
   filters = {},
+  search = "",
 }: {
   entries: CatalogTimelineEntry[];
   hasNextPage: boolean;
   nextCursor?: string;
   filters?: CatalogTimelineFilters;
+  search?: string;
 }) {
-  const moreParams = new URLSearchParams();
+  const moreParams = new URLSearchParams(search);
+  moreParams.delete("cursor");
   for (const [key, value] of Object.entries(filters))
     if (value !== undefined) {
       const queryKey = key === "sourceTopic" ? "topic" : key === "isDeleted" ? "deleted" : key;
@@ -230,7 +233,7 @@ export default function CatalogTimelineRoute() {
   };
   return (
     <>
-      <CatalogTimelineView {...page} entries={entries} filters={filters} />
+      <CatalogTimelineView {...page} entries={entries} filters={filters} search={search} />
       <CatalogFindingActivityView page={activity} search={search} />
     </>
   );
