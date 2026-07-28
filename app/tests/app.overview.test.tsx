@@ -27,9 +27,11 @@ describe("merchant overview", () => {
 
   it("renders the truthful waiting state without activity", () => {
     const html = renderOverview([]);
-    expect(html).toContain("Catalog overview");
+    expect(html).toContain("Overview");
     expect(html).toContain("Waiting for catalog activity");
     expect(html).toContain("Previous activity is not backfilled");
+    expect(html).not.toContain("Recent changes shown");
+    expect(html).not.toContain("Resources represented");
   });
 
   it("renders recent evidence and findings in merchant language", () => {

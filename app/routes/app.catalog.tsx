@@ -1,6 +1,6 @@
 import type {LoaderFunctionArgs} from "react-router";
 import {Form, Link, useLoaderData} from "react-router";
-import {BlockStack, Button, Card, Divider, InlineStack, Page, Text} from "@shopify/polaris";
+import {BlockStack, Button, Page, Text} from "@shopify/polaris";
 import {authenticate} from "../shopify.server";
 import {
   parseCatalogDetectionOverviewFilters,
@@ -45,6 +45,14 @@ const ACTION_LABELS: Record<CatalogTimelineAction, string> = {
 };
 
 const effectiveTime = (entry: CatalogTimelineEntry) => entry.occurredAt ?? entry.receivedAt;
+const dayLabel = (date: Date) => {
+  const today = new Date();
+  const calendarDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const difference = Math.round((calendarDay(today) - calendarDay(date)) / 86_400_000);
+  if (difference === 0) return "Today";
+  if (difference === 1) return "Yesterday";
+  return date.toLocaleDateString(undefined, {month: "long", day: "numeric", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric"});
+};
 
 const paginationParams = (search: string, target: "cursor" | "findingCursor" | "overviewCursor",
   replacement?: string) => {
@@ -80,38 +88,38 @@ export function CatalogTimelineView({
     }
   if (nextCursor) moreParams.set("cursor", nextCursor);
   const filtered = Object.values(filters).some((value) => value !== undefined);
+  const activeFilterCount = Object.values(filters).filter((value) => value !== undefined).length;
   const content = (
-      <BlockStack gap="500">
-      <section aria-labelledby="activity-heading">
-      <BlockStack gap="300"><Text as="h2" variant="headingMd" id="activity-heading">Recent activity</Text>
+      <div className="SkuardMerchant SkuardCatalog"><BlockStack gap="500">
+      <section className="SkuardTimeline" aria-labelledby="activity-heading">
+      <header className="SkuardWorkspaceHeader"><div><p className="SkuardEyebrow">Recorded catalog history</p><Text as="h2" variant="headingLg" id="activity-heading">Activity stream</Text></div>
+        {entries[0] ? <p>Latest on this page<br /><strong>{effectiveTime(entries[0]).toLocaleString()}</strong></p> : null}</header>
       {!entries.length ? (
-        <Card><BlockStack gap="200">
+        <div className="SkuardPanel"><BlockStack gap="200">
           <Text as="h3" variant="headingMd">{filtered ? "No activity matches these filters" : "Waiting for catalog activity"}</Text>
           <Text as="p" tone="subdued">{filtered
             ? "Try changing or clearing the filters to see other recorded activity."
             : "Skuard records product and collection changes after monitoring was enabled. Previous activity is not backfilled, and no action is required while you wait."}</Text>
           {filtered ? <Button url="/app/catalog">Reset filters</Button> : null}
-        </BlockStack></Card>
+        </BlockStack></div>
       ) : (
-        <Card><BlockStack gap="300">
-          {entries.map((entry, index) => (
-            <BlockStack key={entry.id} gap="200">
-              {index ? <Divider /> : null}
-              <InlineStack align="space-between" gap="300" wrap={false}>
-                <BlockStack gap="100"><Text as="h3" variant="headingSm">
-                  {entry.resourceType === "PRODUCT" ? "Product" : "Collection"} {ACTION_LABELS[entry.action].toLowerCase()}
-                </Text>
-                <Link to={`/app/catalog/${entry.resourceType}/${encodeURIComponent(entry.resourceId)}`}>{entry.resourceId}</Link>
-                {entry.isDeleted ? <Text as="p" tone="critical">Deleted</Text> : null}</BlockStack>
-                <Text as="span" tone="subdued"><time dateTime={effectiveTime(entry).toISOString()}>{effectiveTime(entry).toLocaleString()}</time></Text>
-              </InlineStack>
-            </BlockStack>
-          ))}
-        </BlockStack></Card>
+        <ol className="SkuardTimelineList">
+          {entries.map((entry, index) => {
+            const time = effectiveTime(entry); const group = dayLabel(time);
+            const previousGroup = index ? dayLabel(effectiveTime(entries[index - 1])) : undefined;
+            return <li key={entry.id}>{group !== previousGroup ? <h3 className="SkuardTimelineList__day">{group}</h3> : null}
+              <Link className="SkuardTimelineRow" to={`/app/catalog/${entry.resourceType}/${encodeURIComponent(entry.resourceId)}`}>
+                <span className={`SkuardTimelineRow__action SkuardTimelineRow__action--${entry.action.toLowerCase()}`} aria-hidden="true">{ACTION_LABELS[entry.action].slice(0, 1)}</span>
+                <span className="SkuardTimelineRow__body"><strong>{entry.resourceType === "PRODUCT" ? "Product" : "Collection"} {ACTION_LABELS[entry.action].toLowerCase()}</strong><small>{entry.resourceId}</small></span>
+                <span className="SkuardTimelineRow__meta">{entry.isDeleted ? <span className="SkuardDeleted">Deleted</span> : null}<time dateTime={time.toISOString()}>{time.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}<span className="SkuardVisuallyHidden"> on {time.toLocaleDateString()}</span></time><span aria-hidden="true">›</span></span>
+              </Link>
+            </li>;
+          })}
+        </ol>
       )}
-      {hasNextPage && nextCursor ? <Button url={`?${moreParams.toString()}`}>Load more activity</Button> : null}
-      </BlockStack></section>
-      <Card><BlockStack gap="300"><Text as="h2" variant="headingMd">Filter activity</Text>
+      {hasNextPage && nextCursor ? <footer className="SkuardPagination"><span>Showing the latest bounded page</span><Button url={`?${moreParams.toString()}`}>Load more activity</Button></footer> : null}
+      </section>
+      <details className="SkuardFilterBar" open={filtered || undefined}><summary><span>Filter activity</span><span>{activeFilterCount ? `${activeFilterCount} active` : "All activity"}<span aria-hidden="true">⌄</span></span></summary>
       <Form method="get">
         <label>
           Resource type{" "}
@@ -157,9 +165,9 @@ export function CatalogTimelineView({
             <option value="true">Deleted</option>
           </select>
         </label>{" "}
-        <button type="submit">Apply filters</button>
-      </Form></BlockStack></Card>
-      </BlockStack>
+        <div className="SkuardFilterBar__actions"><button type="submit">Apply filters</button>{filtered ? <Link to="/app/catalog">Reset</Link> : null}</div>
+      </Form></details>
+      </BlockStack></div>
   );
   return standalone ? <Page title="Catalog activity"
     subtitle="Review recent product and collection changes recorded from Shopify.">{content}</Page> : content;
@@ -288,11 +296,11 @@ export default function CatalogTimelineRoute() {
   }))};
   return (
     <Page title="Catalog activity" subtitle="Review recent product and collection changes recorded from Shopify.">
-      <BlockStack gap="500">
+      <div className="SkuardMerchant SkuardCatalog"><BlockStack gap="500">
         <CatalogTimelineView {...page} entries={entries} filters={filters} search={search} standalone={false} />
-        <Card><CatalogFindingActivityView page={activity} search={search} /></Card>
-        <Card><CatalogDetectionOverviewView page={overview} filters={overviewFilters} search={search} /></Card>
-      </BlockStack>
+        <div className="SkuardInspectionWorkspace"><div className="SkuardInspectionWorkspace__primary"><CatalogFindingActivityView page={activity} search={search} /></div>
+        <aside className="SkuardInspectionWorkspace__summary" aria-label="Finding summary"><CatalogDetectionOverviewView page={overview} filters={overviewFilters} search={search} /></aside></div>
+      </BlockStack></div>
     </Page>
   );
 }

@@ -133,20 +133,29 @@ export function HistoricalFindingsView({summary}: {summary: CatalogHistoricalFin
 
 export function CatalogResourceHistoryView({history, historicalFindings, diff}: {history: CatalogResourceHistory;
   historicalFindings: CatalogHistoricalFindingSummary; diff?: CatalogStructuralDiff}) {
-  return <main>
-    <p><Link to="/app/catalog">← Back to catalog activity</Link></p>
-    <h1>{history.resourceType === "PRODUCT" ? "Product" : "Collection"} history</h1>
+  const type = history.resourceType === "PRODUCT" ? "Product" : "Collection";
+  const latest = history.entries[0] ? effectiveTime(history.entries[0]) : undefined;
+  return <main className="SkuardMerchant SkuardHistory">
+    <nav aria-label="Breadcrumb"><Link to="/app/catalog">← Back to catalog activity</Link></nav>
+    <header className="SkuardHistory__identity"><p>{type} · {history.status === "ACTIVE" ? "Active" : "Deleted"}</p>
+    <h1>{type} history</h1>
     <p><strong>Resource ID:</strong> {history.resourceId}</p>
-    <p><strong>Current status:</strong> {history.status === "ACTIVE" ? "Active" : "Deleted"}</p>
-    {diff ? <CatalogDiffView diff={diff} /> : null}
-    <HistoricalFindingsView summary={historicalFindings} />
-    <h2>Event history</h2>
-    <ol>{history.entries.map((entry) => <li key={entry.id}>
-      <strong>{labels[entry.action]}</strong>{" — "}
-      <time dateTime={effectiveTime(entry).toISOString()}>{effectiveTime(entry).toLocaleString()}</time>
-      {entry.isDeleted ? " (Deleted)" : ""}{" "}
-      <Link to={`?snapshot=${encodeURIComponent(entry.id)}`}>View changes</Link>
-    </li>)}</ol>
+    <p><strong>Current status:</strong> {history.status === "ACTIVE" ? "Active" : "Deleted"}
+      {latest ? <> · Last observed <time dateTime={latest.toISOString()}>{latest.toLocaleString()}</time></> : null}</p></header>
+    <div className="SkuardInvestigation">
+      <aside className="SkuardEventRail" aria-labelledby="event-history-heading"><p className="SkuardEyebrow">Recorded states</p><h2 id="event-history-heading">Event history</h2>
+        <ol>{history.entries.map((entry) => <li key={entry.id} className={entry.isDeleted ? "SkuardEventRail__deleted" : ""}>
+          <span aria-hidden="true" /><div><strong>{labels[entry.action]}</strong>
+          <time dateTime={effectiveTime(entry).toISOString()}>{effectiveTime(entry).toLocaleString()}</time>
+          {entry.isDeleted ? <em>Deleted resource (Deleted)</em> : null}
+          <Link to={`?snapshot=${encodeURIComponent(entry.id)}`}>View changes</Link></div>
+        </li>)}</ol>
+      </aside>
+      <div className="SkuardInvestigation__detail">
+        {diff ? <section className="SkuardComparisonSurface" aria-label="Selected change comparison"><CatalogDiffView diff={diff} /></section> : <section className="SkuardSelectionPrompt"><h2>Select a recorded event</h2><p>Choose “View changes” from the history to inspect its exact recorded values.</p></section>}
+        <section className="SkuardHistoryFindings"><HistoricalFindingsView summary={historicalFindings} /></section>
+      </div>
+    </div>
   </main>;
 }
 
