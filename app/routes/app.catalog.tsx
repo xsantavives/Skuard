@@ -1,6 +1,7 @@
 import type {LoaderFunctionArgs} from "react-router";
+import {useState} from "react";
 import {Form, Link, useLoaderData} from "react-router";
-import {BlockStack, Button, Page, Text} from "@shopify/polaris";
+import {BlockStack, Button, Page, Select, Text} from "@shopify/polaris";
 import {authenticate} from "../shopify.server";
 import {
   parseCatalogDetectionOverviewFilters,
@@ -45,6 +46,10 @@ const ACTION_LABELS: Record<CatalogTimelineAction, string> = {
 };
 
 const effectiveTime = (entry: CatalogTimelineEntry) => entry.occurredAt ?? entry.receivedAt;
+const FormSelect = ({initialValue, ...props}: Omit<React.ComponentProps<typeof Select>, "value" | "onChange"> & {initialValue: string}) => {
+  const [value, setValue] = useState(initialValue);
+  return <Select {...props} value={value} onChange={setValue} />;
+};
 const dayLabel = (date: Date) => {
   const today = new Date();
   const calendarDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
@@ -119,53 +124,28 @@ export function CatalogTimelineView({
       )}
       {hasNextPage && nextCursor ? <footer className="SkuardPagination"><span>Showing the latest bounded page</span><Button url={`?${moreParams.toString()}`}>Load more activity</Button></footer> : null}
       </section>
-      <details className="SkuardFilterBar" open={filtered || undefined}><summary><span>Filter activity</span><span>{activeFilterCount ? `${activeFilterCount} active` : "All activity"}<span aria-hidden="true">⌄</span></span></summary>
+      <details className="SkuardFilterBar" open={filtered || undefined}><summary><span>Filter activity</span><span>{activeFilterCount ? `${activeFilterCount} active` : "All activity"}<span className="SkuardDisclosureIcon" aria-hidden="true">⌄</span></span></summary>
       <Form method="get">
-        <label>
-          Resource type{" "}
-          <select name="resourceType" defaultValue={String(filters.resourceType ?? "")}>
-            <option value="">All</option>
-            <option value="PRODUCT">Product</option>
-            <option value="COLLECTION">Collection</option>
-          </select>
-        </label>{" "}
-        <label>
-          Action{" "}
-          <select name="action" defaultValue={String(filters.action ?? "")}>
-            <option value="">All</option>
-            <option value="CREATED">Created</option>
-            <option value="UPDATED">Updated</option>
-            <option value="DELETED">Deleted</option>
-          </select>
-        </label>{" "}
-        <label>
-          Topic{" "}
-          <select name="topic" defaultValue={String(filters.sourceTopic ?? "")}>
-            <option value="">All</option>
-            {[
+        <FormSelect label="Resource type" name="resourceType" initialValue={String(filters.resourceType ?? "")} options={[
+          {label: "All resources", value: ""}, {label: "Products", value: "PRODUCT"}, {label: "Collections", value: "COLLECTION"},
+        ]} />
+        <FormSelect label="Action" name="action" initialValue={String(filters.action ?? "")} options={[
+          {label: "All actions", value: ""}, {label: "Created", value: "CREATED"}, {label: "Updated", value: "UPDATED"}, {label: "Deleted", value: "DELETED"},
+        ]} />
+        <FormSelect label="Topic" name="topic" initialValue={String(filters.sourceTopic ?? "")} options={[
+          {label: "All topics", value: ""}, ...[
               "PRODUCTS_CREATE",
               "PRODUCTS_UPDATE",
               "PRODUCTS_DELETE",
               "COLLECTIONS_CREATE",
               "COLLECTIONS_UPDATE",
               "COLLECTIONS_DELETE",
-            ].map((topic) => (
-              <option key={topic}>{topic}</option>
-            ))}
-          </select>
-        </label>{" "}
-        <label>
-          Deletion status{" "}
-          <select
-            name="deleted"
-            defaultValue={filters.isDeleted === undefined ? "" : String(filters.isDeleted)}
-          >
-            <option value="">All</option>
-            <option value="false">Current activity</option>
-            <option value="true">Deleted</option>
-          </select>
-        </label>{" "}
-        <div className="SkuardFilterBar__actions"><button type="submit">Apply filters</button>{filtered ? <Link to="/app/catalog">Reset</Link> : null}</div>
+            ].map((topic) => ({label: topic.replace("_", " / ").toLowerCase(), value: topic})),
+        ]} />
+        <FormSelect label="Status" name="deleted" initialValue={filters.isDeleted === undefined ? "" : String(filters.isDeleted)} options={[
+          {label: "Any status", value: ""}, {label: "Current", value: "false"}, {label: "Deleted", value: "true"},
+        ]} />
+        <div className="SkuardFilterBar__actions"><Button submit variant="primary">Apply filters</Button>{filtered ? <Button url="/app/catalog" variant="plain">Clear all</Button> : null}</div>
       </Form></details>
       </BlockStack></div>
   );
@@ -182,8 +162,8 @@ export function CatalogFindingActivityView({
 }) {
   const moreParams = paginationParams(search, "findingCursor", page.nextCursor);
   return (
-    <section aria-labelledby="finding-activity-heading">
-      <h2 id="finding-activity-heading">Recent findings</h2>
+    <section className="SkuardReviewSection" aria-labelledby="finding-activity-heading">
+      <p className="SkuardEyebrow">Individual changes</p><h2 id="finding-activity-heading">Recent findings</h2>
       {page.candidateCount === 0 ? (
         <p>Findings will appear after catalog activity is recorded.</p>
       ) : page.entries.length === 0 ? (
@@ -242,21 +222,21 @@ export function CatalogDetectionOverviewView({page, filters = {}, search = ""}: 
   for (const name of ["overviewCursor", "resourceType", "findingCode"]) retained.delete(name);
   return <section aria-labelledby="detection-overview-heading">
     <h2 id="detection-overview-heading">Changes to inspect</h2>
-    <p>Findings are calculated from recent recorded changes. Older activity may not be included.</p>
-    <Form method="get">
+    <p className="SkuardSectionIntro">Findings are calculated from recent recorded changes. Older activity may not be included.</p>
+    <Form method="get" className="SkuardOverviewFilters">
       {[...retained.entries()].map(([name, value], index) =>
         <input key={`${name}:${index}`} type="hidden" name={name} value={value} />)}
-      <label>Resource type{" "}<select name="resourceType" defaultValue={filters.resourceType ?? ""}>
-        <option value="">All</option><option value="PRODUCT">Product</option><option value="COLLECTION">Collection</option>
-      </select></label>{" "}
-      <label>Finding{" "}<select name="findingCode" defaultValue={filters.findingCode ?? ""}>
-        <option value="">All findings</option>
-        {CATALOG_COMPARISON_FINDING_CODES.map((code) => <option key={code} value={code}>{code.replaceAll("_", " ").toLowerCase()}</option>)}
-      </select></label>{" "}<button type="submit">Apply overview filters</button>
+      <FormSelect label="Resource type" name="resourceType" initialValue={filters.resourceType ?? ""} options={[
+        {label: "All resources", value: ""}, {label: "Products", value: "PRODUCT"}, {label: "Collections", value: "COLLECTION"},
+      ]} />
+      <FormSelect label="Finding" name="findingCode" initialValue={filters.findingCode ?? ""} options={[
+        {label: "All findings", value: ""}, ...CATALOG_COMPARISON_FINDING_CODES.map((code) => ({label: code.replaceAll("_", " ").toLowerCase(), value: code})),
+      ]} />
+      <Button submit>Apply</Button>
     </Form>
-    {(filters.resourceType || filters.findingCode) ? <p>Active overview filters: {[
+    {(filters.resourceType || filters.findingCode) ? <p className="SkuardActiveFilters">Active filters: {[
       filters.resourceType, filters.findingCode,
-    ].filter(Boolean).join(" · ")}</p> : <p>Active overview filters: none</p>}
+    ].filter(Boolean).join(" · ")}</p> : null}
     {page.groups.length === 0 ? <><h3>No findings in recent activity</h3><p>No findings were detected in the recent activity reviewed. Some comparisons need another recorded state for the same resource.</p></> :
       page.groups.map((group) => <article key={group.code}>
         <h3>{group.label}</h3>
@@ -298,8 +278,9 @@ export default function CatalogTimelineRoute() {
     <Page title="Catalog activity" subtitle="Review recent product and collection changes recorded from Shopify.">
       <div className="SkuardMerchant SkuardCatalog"><BlockStack gap="500">
         <CatalogTimelineView {...page} entries={entries} filters={filters} search={search} standalone={false} />
-        <div className="SkuardInspectionWorkspace"><div className="SkuardInspectionWorkspace__primary"><CatalogFindingActivityView page={activity} search={search} /></div>
-        <aside className="SkuardInspectionWorkspace__summary" aria-label="Finding summary"><CatalogDetectionOverviewView page={overview} filters={overviewFilters} search={search} /></aside></div>
+        {activity.candidateCount > 0 || overview.groups.length > 0 || overviewFilters.resourceType || overviewFilters.findingCode ?
+          <div className="SkuardInspectionWorkspace"><div className="SkuardInspectionWorkspace__primary"><CatalogFindingActivityView page={activity} search={search} /></div>
+          <aside className="SkuardInspectionWorkspace__summary" aria-label="Finding summary"><CatalogDetectionOverviewView page={overview} filters={overviewFilters} search={search} /></aside></div> : null}
       </BlockStack></div>
     </Page>
   );
