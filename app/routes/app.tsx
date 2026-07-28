@@ -1,4 +1,4 @@
-import type {HeadersFunction, LoaderFunctionArgs} from "react-router";
+import type {HeadersFunction, LinksFunction, LoaderFunctionArgs} from "react-router";
 import {Outlet, useLoaderData, useRouteError} from "react-router";
 import {AppProvider as ShopifyAppProvider} from "@shopify/shopify-app-react-router/react";
 import {AppProvider as PolarisAppProvider} from "@shopify/polaris";
@@ -6,6 +6,9 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import {NavMenu} from "@shopify/app-bridge-react";
 import {boundary} from "@shopify/shopify-app-react-router/server";
 import {authenticate} from "../shopify.server";
+import merchantStyles from "../styles/merchant.css?url";
+
+export const links: LinksFunction = () => [{rel: "stylesheet", href: merchantStyles}];
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
   try {

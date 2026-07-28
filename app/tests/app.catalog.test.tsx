@@ -209,6 +209,14 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("not backfilled");
   });
 
+  it("distinguishes filtered emptiness and provides a reset path", () => {
+    const html = renderRoute(<CatalogTimelineView entries={[]} hasNextPage={false}
+      filters={{resourceType: CatalogResourceType.PRODUCT}} />);
+    expect(html).toContain("No activity matches these filters");
+    expect(html).toContain("Reset filters");
+    expect(html).not.toContain("Previous activity is not backfilled");
+  });
+
   it("renders resource identity, derived status, tombstone history, and back navigation", () => {
     const html = renderRoute(
       <CatalogResourceHistoryView
