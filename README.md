@@ -175,4 +175,10 @@ The overview adds no severity, risk, trend, anomaly, incident, policy, recommend
 
 ## Deployment validation
 
+## SKU-017 identity-aware variant pricing evidence
+
+Product comparisons now derive price and compare-at price evidence by matching detailed variants by stable Shopify identity: a non-empty `admin_graphql_api_id` is preferred, with a non-empty string or finite integer `id` as the only fallback. Array position and merchant labels are never identity. Strict string-based decimal canonicalization treats equivalent recorded forms such as `10.00` and `10.0` as equal without floating-point arithmetic, while preserving recorded values for display.
+
+Pricing coverage is **COMPLETE** only when `variant_gids` supplies a trustworthy expected identity set fully covered by detailed variants, **PARTIAL** when that set proves details are missing, and **UNVERIFIED** when completeness cannot be proved or a validation/safety limit is reached. Shopify product webhooks can include only a bounded detail subset, so qualified comparisons do not claim that unrepresented variants were unchanged. Evidence is bounded, deterministic, calculated on demand from immutable `CatalogSnapshot` states, and never persisted. This slice adds no Admin API fetching, catalog writes, mutation, scope, policy, incident, alert, recovery, automation, AI, or billing; Shopify access remains read-only with only `read_products`.
+
 Use the [Render and embedded Shopify Admin deployment-validation runbook](docs/deployment-validation.md) to configure the production service and record external validation results.

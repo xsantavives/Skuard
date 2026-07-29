@@ -1,15 +1,13 @@
 import {CatalogResourceType, Prisma} from "@prisma/client";
 import {prisma} from "../db.server";
-import {deriveCatalogChangeSignals} from "./catalog-change-signals";
 import {
-  deriveCatalogComparisonFindings,
   type CatalogComparisonFindingCode,
 } from "./catalog-comparison-findings";
 import {
   catalogComparableLifecycle,
-  diffCanonicalJson,
   type DiffSnapshot,
 } from "./catalog-diff.server";
+import {analyzeCatalogComparison} from "./catalog-comparison-analysis";
 import {
   compareTimelineEntries,
   effectiveEventTime,
@@ -181,12 +179,8 @@ export function deriveCatalogFindingActivity(
     const lifecycle = catalogComparableLifecycle(current, previous);
     if (!lifecycle.comparable) continue;
     comparableCount += 1;
-    const diff = diffCanonicalJson(lifecycle.previousState, lifecycle.currentState);
-    const findings = deriveCatalogComparisonFindings(
-      current.resourceType,
-      deriveCatalogChangeSignals(current.resourceType, diff.entries),
-      {truncated: diff.truncated},
-    ).map(({code, label, evidenceCount}) => ({code, label, evidenceCount}));
+    const analysis = analyzeCatalogComparison(current.resourceType, lifecycle.previousState, lifecycle.currentState);
+    const findings = analysis.findings.map(({code, label, evidenceCount}) => ({code, label, evidenceCount}));
     if (findings.length)
       entries.push({
         currentSnapshotId: current.id,
@@ -194,7 +188,7 @@ export function deriveCatalogFindingActivity(
         resourceId: current.resourceId,
         currentEffectiveAt: effectiveEventTime(current),
         findings,
-        truncated: diff.truncated,
+        truncated: analysis.structural.truncated,
       });
   }
   const candidateCount = candidates.length;

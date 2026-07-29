@@ -38,9 +38,9 @@ const explanations = {
 export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
   const comparable = diff.status === "COMPARABLE" || diff.status === "LIMIT_EXCEEDED";
   const summary = summarizeCatalogChangeClassifications(diff.resourceType, diff.entries);
-  const signals = deriveCatalogChangeSignals(diff.resourceType, diff.entries);
+  const signals = diff.signals ?? deriveCatalogChangeSignals(diff.resourceType, diff.entries);
   const signalSummary = summarizeCatalogChangeSignals(signals);
-  const findings = deriveCatalogComparisonFindings(diff.resourceType, signals, {truncated: diff.truncated});
+  const findings = diff.findings ?? deriveCatalogComparisonFindings(diff.resourceType, signals, {truncated: diff.truncated});
   const signalLabels = new Map(signals.map((signal) => [signal.code, signal.label]));
   return <section aria-labelledby="changes-heading">
     <h2 id="changes-heading">Recorded changes</h2>
@@ -92,6 +92,21 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
             <td>{finding.evidenceSignalCodes.map((code) => signalLabels.get(code)).join(", ")}</td><td>{finding.evidenceCount}</td></tr>)}</tbody>
         </table>}
       </section>
+      {diff.resourceType === "PRODUCT" && diff.pricingCoverage ? <section aria-labelledby="pricing-heading">
+        <h3 id="pricing-heading">Pricing changes</h3>
+        <p><strong>Pricing coverage:</strong> {diff.pricingCoverage.status}</p>
+        {diff.pricingCoverage.status !== "COMPLETE" || diff.pricingCoverage.limited ? <p>Pricing evidence is qualified because other variants might not be fully represented in this webhook payload.</p> : null}
+        {!diff.pricingChanges?.length ? <p>{diff.pricingCoverage.status === "COMPLETE" && !diff.pricingCoverage.limited
+          ? "No price or compare-at price changes were found in this comparison."
+          : "No price changes were found among variants with observable pricing details. Other variants might not be fully represented in this webhook payload."}</p> : <table>
+          <thead><tr><th>Variant</th><th>SKU</th><th>Stable variant ID</th><th>Field</th><th>Before</th><th>After</th><th>Transition</th></tr></thead>
+          <tbody>{diff.pricingChanges.map((change) => <tr key={`${change.variantId}:${change.field}`}>
+            <td>{change.title ?? change.variantId}</td><td>{change.sku ?? "—"}</td><td><code>{change.variantId}</code></td>
+            <td>{change.field === "PRICE" ? "Price" : "Compare-at price"}</td><td>{change.before ?? "Not set"}</td>
+            <td>{change.after ?? "Not set"}</td><td>{change.transition === "SET" ? "Set" : change.transition === "CLEARED" ? "Cleared" : "Changed"}</td>
+          </tr>)}</tbody>
+        </table>}
+      </section> : null}
     </>}
   </section>;
 }

@@ -88,8 +88,8 @@ describe("bounded catalog finding activity", () => {
         pair(
           "new",
           20,
-          {title: "New", status: "active", variants: [{price: "12", sku: "B"}]},
-          {title: "Old", status: "draft", variants: [{price: "10", sku: "A"}]},
+          {title: "New", status: "active", variants: [{id: 1, price: "12", compare_at_price: null, sku: "B"}]},
+          {title: "Old", status: "draft", variants: [{id: 1, price: "10", compare_at_price: null, sku: "A"}]},
         ),
       ],
       25,

@@ -1,9 +1,9 @@
 import {CatalogResourceType, Prisma} from "@prisma/client";
 import {prisma} from "../db.server";
-import {deriveCatalogChangeSignals} from "./catalog-change-signals";
-import {CATALOG_COMPARISON_FINDING_CODES, deriveCatalogComparisonFindings,
+import {CATALOG_COMPARISON_FINDING_CODES,
   type CatalogComparisonFindingCode} from "./catalog-comparison-findings";
-import {catalogComparableLifecycle, diffCanonicalJson, type DiffSnapshot} from "./catalog-diff.server";
+import {catalogComparableLifecycle, type DiffSnapshot} from "./catalog-diff.server";
+import {analyzeCatalogComparison} from "./catalog-comparison-analysis";
 import {CATALOG_TIMELINE_ORDER_SQL, compareTimelineEntries, effectiveEventTime} from "./catalog-timeline.server";
 
 export const DEFAULT_HISTORICAL_COMPARISON_LIMIT = 10;
@@ -48,16 +48,15 @@ export function summarizeCatalogFindingHistory(resourceType: CatalogResourceType
     const lifecycle = catalogComparableLifecycle(current, previous);
     if (!lifecycle.comparable) continue;
     comparablePairCount += 1;
-    const diff = diffCanonicalJson(lifecycle.previousState, lifecycle.currentState);
-    if (diff.truncated) truncatedComparisonCount += 1;
-    const findings = deriveCatalogComparisonFindings(resourceType, deriveCatalogChangeSignals(resourceType, diff.entries),
-      {truncated: diff.truncated});
+    const analysis = analyzeCatalogComparison(resourceType, lifecycle.previousState, lifecycle.currentState);
+    if (analysis.structural.truncated) truncatedComparisonCount += 1;
+    const findings = analysis.findings;
     for (const finding of findings) {
       const total = totals.get(finding.code) ?? {code: finding.code, label: finding.label, comparisonCount: 0,
         evidenceCount: 0, occurrences: []};
       total.occurrences.push({currentSnapshotId: current.id, previousSnapshotId: previous.id,
         currentEffectiveAt: effectiveEventTime(current), previousEffectiveAt: effectiveEventTime(previous),
-        evidenceCount: finding.evidenceCount, truncated: diff.truncated});
+        evidenceCount: finding.evidenceCount, truncated: analysis.structural.truncated});
       total.comparisonCount = total.occurrences.length;
       total.evidenceCount += finding.evidenceCount;
       totals.set(finding.code, total);

@@ -369,11 +369,9 @@ describe("merchant catalog routes", () => {
     expect(html).toContain("Before");
     expect(html).toContain("Detected changes");
     expect(html).toContain("Product title changed: 1");
-    expect(html).toContain("Variant price changed: 1");
     expect(html).toContain("Product content");
     expect(html).toContain("Findings");
     expect(html).toContain("Product identity fields changed");
-    expect(html).toContain("Variant pricing fields changed");
     expect(html).toContain("Evidence count");
     expect(html).toContain('data-value-kind="null"');
     expect(html).not.toContain("secondary-hash");

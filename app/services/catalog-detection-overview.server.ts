@@ -1,17 +1,15 @@
 import {CatalogResourceType, Prisma} from "@prisma/client";
 import {prisma} from "../db.server";
-import {deriveCatalogChangeSignals} from "./catalog-change-signals";
 import {
   CATALOG_COMPARISON_FINDING_CODES,
-  deriveCatalogComparisonFindings,
   type CatalogComparisonFinding,
   type CatalogComparisonFindingCode,
 } from "./catalog-comparison-findings";
 import {
   catalogComparableLifecycle,
-  diffCanonicalJson,
   type DiffSnapshot,
 } from "./catalog-diff.server";
+import {analyzeCatalogComparison} from "./catalog-comparison-analysis";
 import {
   compareTimelineEntries,
   effectiveEventTime,
@@ -190,13 +188,12 @@ export function observeCatalogComparisons(pairs: readonly CatalogDetectionPair[]
     if (!previous) return {status: "SKIPPED", currentSnapshotId: current.id};
     const lifecycle = catalogComparableLifecycle(current, previous);
     if (!lifecycle.comparable) return {status: "SKIPPED", currentSnapshotId: current.id};
-    const diff = diffCanonicalJson(lifecycle.previousState, lifecycle.currentState);
+    const analysis = analyzeCatalogComparison(current.resourceType, lifecycle.previousState, lifecycle.currentState);
     return {status: "COMPARABLE", currentSnapshotId: current.id, previousSnapshotId: previous.id,
       resourceType: current.resourceType, resourceId: current.resourceId, effectiveAt: effectiveEventTime(current),
       receivedAt: current.receivedAt, createdAt: current.createdAt,
-      findings: deriveCatalogComparisonFindings(current.resourceType,
-        deriveCatalogChangeSignals(current.resourceType, diff.entries), {truncated: diff.truncated}),
-      structurallyTruncated: diff.truncated} satisfies CatalogComparisonObservation;
+      findings: analysis.findings,
+      structurallyTruncated: analysis.structural.truncated} satisfies CatalogComparisonObservation;
   });
 }
 

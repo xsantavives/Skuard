@@ -1,6 +1,7 @@
 import {CatalogResourceType, Prisma} from "@prisma/client";
 import {prisma} from "../db.server";
 import type {JsonValue} from "./catalog-json.server";
+import {analyzeCatalogComparison, type PricingCoverage, type VariantPricingChange} from "./catalog-comparison-analysis";
 import {actionForCatalogTopic, CATALOG_TIMELINE_ORDER_SQL, effectiveEventTime, snapshotBeforeSql} from "./catalog-timeline.server";
 
 export const DEFAULT_CATALOG_DIFF_LIMITS = {maxDepth: 32, maxVisitedNodes: 20_000, maxEntries: 200} as const;
@@ -14,6 +15,8 @@ export interface CatalogStructuralDiff {
   currentSnapshotId: string; previousSnapshotId?: string; resourceType: CatalogResourceType; resourceId: string;
   status: CatalogDiffStatus; entries: CatalogDiffEntry[]; returnedChangeCount: number; truncated: boolean;
   currentEffectiveAt: Date; previousEffectiveAt?: Date; currentAction: "CREATED" | "UPDATED" | "DELETED";
+  signals?: import("./catalog-change-signals").CatalogChangeSignal[]; findings?: import("./catalog-comparison-findings").CatalogComparisonFinding[];
+  pricingChanges?: VariantPricingChange[]; pricingCoverage?: PricingCoverage;
 }
 
 const jsonType = (value: JsonValue) => value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
@@ -121,7 +124,8 @@ export async function queryCatalogStructuralDiff(shop: string, resourceType: str
       lifecycle.reason === "CURRENT_NOT_UPDATE" ? "CREATED_WITHOUT_BASELINE" : "INVALID_LIFECYCLE";
     return {...withPrevious, status};
   }
-  const result = diffCanonicalJson(lifecycle.previousState, lifecycle.currentState, limits);
-  return {...withPrevious, status: result.truncated ? "LIMIT_EXCEEDED" : "COMPARABLE", entries: result.entries,
-    returnedChangeCount: result.entries.length, truncated: result.truncated};
+  const analysis = analyzeCatalogComparison(current.resourceType, lifecycle.previousState, lifecycle.currentState, {structural: limits});
+  return {...withPrevious, status: analysis.structural.truncated ? "LIMIT_EXCEEDED" : "COMPARABLE", entries: analysis.structural.entries,
+    returnedChangeCount: analysis.structural.entries.length, truncated: analysis.structural.truncated, signals: analysis.signals,
+    findings: analysis.findings, ...(analysis.pricing ? {pricingChanges: analysis.pricing.changes, pricingCoverage: analysis.pricing.coverage} : {})};
 }

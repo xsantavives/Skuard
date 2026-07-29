@@ -70,8 +70,6 @@ function matchProduct(path: string): CatalogChangeSignalCode | undefined {
   if (path === "/product_type") return "PRODUCT_TYPE_CHANGED";
   if (rootedAt(path, "/tags")) return "PRODUCT_TAGS_CHANGED";
   if (rootedAt(path, "/options")) return "PRODUCT_OPTIONS_CHANGED";
-  if (path === "/variants/*/price") return "VARIANT_PRICE_CHANGED";
-  if (path === "/variants/*/compare_at_price") return "VARIANT_COMPARE_AT_PRICE_CHANGED";
   if (path === "/variants/*/sku") return "VARIANT_SKU_CHANGED";
   if (path === "/variants/*/barcode") return "VARIANT_BARCODE_CHANGED";
   if (rootedAt(path, "/image") || rootedAt(path, "/images")) return "PRODUCT_MEDIA_CHANGED";

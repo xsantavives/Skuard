@@ -48,9 +48,9 @@ describe("bounded historical finding summary", () => {
 
   it("aggregates comparison counts separately from repeated evidence in fixed order", () => {
     const rows = [
-      snapshot("three", 3, {title: "C", variants: [{price: "3"}, {price: "4"}]}),
-      snapshot("two", 2, {title: "B", variants: [{price: "2"}, {price: "3"}]}),
-      snapshot("one", 1, {title: "A", variants: [{price: "1"}, {price: "2"}]}),
+      snapshot("three", 3, {title: "C", variants: [{id: 1, price: "3", compare_at_price: null}, {id: 2, price: "4", compare_at_price: null}]}),
+      snapshot("two", 2, {title: "B", variants: [{id: 1, price: "2", compare_at_price: null}, {id: 2, price: "3", compare_at_price: null}]}),
+      snapshot("one", 1, {title: "A", variants: [{id: 1, price: "1", compare_at_price: null}, {id: 2, price: "2", compare_at_price: null}]}),
     ];
     const result = summarizeCatalogFindingHistory("PRODUCT", "product-1", rows, 10, true);
     expect(result.comparablePairCount).toBe(2);
@@ -67,8 +67,8 @@ describe("bounded historical finding summary", () => {
   });
 
   it("keeps structurally truncated comparisons and their returned findings", () => {
-    const variants = Array.from({length: 250}, (_, index) => ({price: String(index + 1)}));
-    const previous = Array.from({length: 250}, (_, index) => ({price: String(index)}));
+    const variants = Array.from({length: 250}, (_, index) => ({id: index, price: String(index + 1), compare_at_price: null}));
+    const previous = Array.from({length: 250}, (_, index) => ({id: index, price: String(index), compare_at_price: null}));
     const result = summarizeCatalogFindingHistory("PRODUCT", "product-1",
       [snapshot("new", 2, {variants}), snapshot("old", 1, {variants: previous})], 10, true);
     expect(result).toMatchObject({comparablePairCount: 1, truncatedComparisonCount: 1});
@@ -80,9 +80,9 @@ describe("bounded historical finding summary", () => {
 
   it("keeps atomic and combination occurrences independent and preserves comparison order over evidence count", () => {
     const input = [
-      snapshot("new", 3, {title: "C", status: "ACTIVE", variants: [{price: "3"}]}),
-      snapshot("middle", 2, {title: "B", status: "DRAFT", variants: [{price: "1"}, {price: "2"}]}),
-      snapshot("old", 1, {title: "A", status: "DRAFT", variants: [{price: "0"}, {price: "1"}]}),
+      snapshot("new", 3, {title: "C", status: "ACTIVE", variants: [{id: 1, price: "3", compare_at_price: null}]}),
+      snapshot("middle", 2, {title: "B", status: "DRAFT", variants: [{id: 1, price: "1", compare_at_price: null}, {id: 2, price: "2", compare_at_price: null}]}),
+      snapshot("old", 1, {title: "A", status: "DRAFT", variants: [{id: 1, price: "0", compare_at_price: null}, {id: 2, price: "1", compare_at_price: null}]}),
     ];
     const copy = structuredClone(input);
     const first = summarizeCatalogFindingHistory("PRODUCT", "product-1", input, 10, true);
