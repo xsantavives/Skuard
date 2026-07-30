@@ -71,13 +71,15 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
         {!signals.length ? <p>No notable change patterns matched the reviewed fields.</p> : <>
           <ul>{signalSummary.map((item) => <li key={item.code}>{item.label}: {item.count}</li>)}</ul>
           <table>
-            <thead><tr><th>Signal</th><th>Category</th><th>Path</th><th>Operation</th><th>Before</th><th>After</th></tr></thead>
+            <thead><tr><th>Signal</th><th>Category</th><th>Path or variant identity</th><th>Operation</th><th>Before</th><th>After</th></tr></thead>
             <tbody>{signals.map((signal, index) => {
               const before = renderDiffValue(signal.before, Object.prototype.hasOwnProperty.call(signal, "before"));
               const after = renderDiffValue(signal.after, Object.prototype.hasOwnProperty.call(signal, "after"));
-              return <tr key={`${signal.operation}:${signal.path}:${index}`}><td>{signal.label}</td>
-                <td>{classifyCatalogDiffEntry(diff.resourceType, signal).label}</td><td><code>{signal.path}</code></td>
-                <td>{operations[signal.operation]}</td><td><code data-value-kind={before.kind}>{before.text}</code></td>
+              const structural = signal.evidenceKind === "STRUCTURAL_PATH";
+              return <tr key={structural ? `${signal.operation}:${signal.path}:${index}` : `${signal.variantId}:${signal.field}:${index}`}><td>{signal.label}</td>
+                <td>{structural ? classifyCatalogDiffEntry(diff.resourceType, signal).label : "Variant data"}</td>
+                <td><code>{structural ? signal.path : signal.variantId}</code></td>
+                <td>{structural ? operations[signal.operation] : signal.transition}</td><td><code data-value-kind={before.kind}>{before.text}</code></td>
                 <td><code data-value-kind={after.kind}>{after.text}</code></td></tr>;
             })}</tbody>
           </table>
