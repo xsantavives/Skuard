@@ -8,6 +8,7 @@ import {
   type DiffSnapshot,
 } from "./catalog-diff.server";
 import {analyzeCatalogComparison} from "./catalog-comparison-analysis";
+import type {PricingCoverageStatus} from "./catalog-comparison-analysis";
 import {
   compareTimelineEntries,
   effectiveEventTime,
@@ -21,6 +22,9 @@ export interface CatalogFindingActivityFinding {
   code: CatalogComparisonFindingCode;
   label: string;
   evidenceCount: number;
+  pricingCoverageStatus?: PricingCoverageStatus;
+  pricingEvidenceLimited?: boolean;
+  pricingChangesTruncated?: boolean;
 }
 export interface CatalogFindingActivityEntry {
   currentSnapshotId: string;
@@ -180,7 +184,11 @@ export function deriveCatalogFindingActivity(
     if (!lifecycle.comparable) continue;
     comparableCount += 1;
     const analysis = analyzeCatalogComparison(current.resourceType, lifecycle.previousState, lifecycle.currentState);
-    const findings = analysis.findings.map(({code, label, evidenceCount}) => ({code, label, evidenceCount}));
+    const findings = analysis.findings.map(({code, label, evidenceCount}) => {
+      const pricing = code === "VARIANT_PRICING_CHANGED" ? analysis.pricing?.coverage : undefined;
+      return {code, label, evidenceCount, ...(pricing ? {pricingCoverageStatus: pricing.status,
+        pricingEvidenceLimited: pricing.limited, pricingChangesTruncated: pricing.changesTruncated} : {})};
+    });
     if (findings.length)
       entries.push({
         currentSnapshotId: current.id,
