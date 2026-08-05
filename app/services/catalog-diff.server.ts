@@ -7,13 +7,21 @@ import {actionForCatalogTopic, CATALOG_TIMELINE_ORDER_SQL, effectiveEventTime, s
 
 export type CatalogDiffStatus = "COMPARABLE" | "NO_PREVIOUS_SNAPSHOT" | "CREATED_WITHOUT_BASELINE" |
   "DELETED_TOMBSTONE" | "PREVIOUS_TOMBSTONE" | "LIMIT_EXCEEDED" | "INVALID_LIFECYCLE";
-export interface CatalogStructuralDiff {
+interface CatalogStructuralDiffBase {
   currentSnapshotId: string; previousSnapshotId?: string; resourceType: CatalogResourceType; resourceId: string;
-  status: CatalogDiffStatus; entries: CatalogDiffEntry[]; returnedChangeCount: number; truncated: boolean;
+  entries: CatalogDiffEntry[]; returnedChangeCount: number; truncated: boolean;
   currentEffectiveAt: Date; previousEffectiveAt?: Date; currentAction: "CREATED" | "UPDATED" | "DELETED";
-  signals?: import("./catalog-change-signals").CatalogChangeSignal[]; findings?: import("./catalog-comparison-findings").CatalogComparisonFinding[];
-  pricingChanges?: VariantPricingChange[]; pricingCoverage?: PricingCoverage;
 }
+type CatalogComparableDiff = CatalogStructuralDiffBase & {
+  status: "COMPARABLE" | "LIMIT_EXCEEDED";
+  signals: import("./catalog-change-signals").CatalogChangeSignal[];
+  findings: import("./catalog-comparison-findings").CatalogComparisonFinding[];
+} & ({resourceType: typeof CatalogResourceType.PRODUCT; pricingChanges: VariantPricingChange[]; pricingCoverage: PricingCoverage} |
+  {resourceType: typeof CatalogResourceType.COLLECTION});
+type CatalogNonComparableDiff = CatalogStructuralDiffBase & {
+  status: Exclude<CatalogDiffStatus, "COMPARABLE" | "LIMIT_EXCEEDED">;
+};
+export type CatalogStructuralDiff = CatalogComparableDiff | CatalogNonComparableDiff;
 
 export interface DiffSnapshot {id: string; resourceType: CatalogResourceType; resourceId: string; sourceTopic: string;
   state: string; isDeleted: boolean; occurredAt: Date | null; receivedAt: Date; createdAt: Date}
@@ -62,7 +70,7 @@ export async function queryCatalogStructuralDiff(shop: string, resourceType: str
     !Object.values(CatalogResourceType).includes(resourceType as CatalogResourceType)) return undefined;
   const current = await repository.findCurrent({shop, resourceType: resourceType as CatalogResourceType, resourceId, snapshotId});
   if (!current) return undefined;
-  let action: CatalogStructuralDiff["currentAction"] = "UPDATED"; let validAction = true;
+  let action: CatalogStructuralDiffBase["currentAction"] = "UPDATED"; let validAction = true;
   try { action = actionForCatalogTopic(current.sourceTopic); } catch { validAction = false; }
   const base = {currentSnapshotId: current.id, resourceType: current.resourceType, resourceId: current.resourceId,
     entries: [] as CatalogDiffEntry[], returnedChangeCount: 0, truncated: false,
@@ -81,5 +89,6 @@ export async function queryCatalogStructuralDiff(shop: string, resourceType: str
   const analysis = analyzeCatalogComparison(current.resourceType, lifecycle.previousState, lifecycle.currentState, {structural: limits});
   return {...withPrevious, status: analysis.structural.truncated ? "LIMIT_EXCEEDED" : "COMPARABLE", entries: analysis.structural.entries,
     returnedChangeCount: analysis.structural.entries.length, truncated: analysis.structural.truncated, signals: analysis.signals,
-    findings: analysis.findings, ...(analysis.pricing ? {pricingChanges: analysis.pricing.changes, pricingCoverage: analysis.pricing.coverage} : {})};
+    findings: analysis.findings, ...(current.resourceType === CatalogResourceType.PRODUCT && analysis.pricing ?
+      {pricingChanges: analysis.pricing.changes, pricingCoverage: analysis.pricing.coverage} : {})} as CatalogStructuralDiff;
 }

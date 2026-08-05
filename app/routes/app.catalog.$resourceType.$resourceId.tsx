@@ -3,8 +3,7 @@ import {Link, useLoaderData} from "react-router";
 import {authenticate} from "../shopify.server";
 import {renderDiffValue} from "../services/catalog-diff-renderer";
 import {classifyCatalogDiffEntry, summarizeCatalogChangeClassifications} from "../services/catalog-change-taxonomy";
-import {deriveCatalogChangeSignals, summarizeCatalogChangeSignals} from "../services/catalog-change-signals";
-import {deriveCatalogComparisonFindings} from "../services/catalog-comparison-findings";
+import {summarizeCatalogChangeSignals} from "../services/catalog-change-signals";
 import {queryCatalogStructuralDiff, type CatalogStructuralDiff} from "../services/catalog-diff.server";
 import {queryCatalogFindingHistory, type CatalogHistoricalFindingSummary} from "../services/catalog-finding-history.server";
 import {queryCatalogResourceHistory, type CatalogResourceHistory} from "../services/catalog-timeline.server";
@@ -38,9 +37,9 @@ const explanations = {
 export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
   const comparable = diff.status === "COMPARABLE" || diff.status === "LIMIT_EXCEEDED";
   const summary = summarizeCatalogChangeClassifications(diff.resourceType, diff.entries);
-  const signals = diff.signals ?? deriveCatalogChangeSignals(diff.resourceType, diff.entries);
+  const signals = comparable ? diff.signals : [];
   const signalSummary = summarizeCatalogChangeSignals(signals);
-  const findings = diff.findings ?? deriveCatalogComparisonFindings(diff.resourceType, signals, {truncated: diff.truncated});
+  const findings = comparable ? diff.findings : [];
   const signalLabels = new Map(signals.map((signal) => [signal.code, signal.label]));
   return <section aria-labelledby="changes-heading">
     <h2 id="changes-heading">Recorded changes</h2>
@@ -95,13 +94,18 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
             <td>{finding.evidenceSignalCodes.map((code) => signalLabels.get(code)).join(", ")}</td><td>{finding.evidenceCount}</td></tr>)}</tbody>
         </table>}
       </section>
-      {diff.resourceType === "PRODUCT" && diff.pricingCoverage ? <section aria-labelledby="pricing-heading">
+      {comparable && diff.resourceType === "PRODUCT" ? <section aria-labelledby="pricing-heading">
         <h3 id="pricing-heading">Pricing changes</h3>
         <p><strong>Pricing coverage:</strong> {diff.pricingCoverage.status}</p>
-        {diff.pricingCoverage.status !== "COMPLETE" || diff.pricingCoverage.limited ? <p>Pricing evidence is qualified because other variants might not be fully represented in this webhook payload.</p> : null}
-        {!diff.pricingChanges?.length ? <p>{diff.pricingCoverage.status === "COMPLETE" && !diff.pricingCoverage.limited
+        {diff.pricingCoverage.status === "PARTIAL" ? <p>Pricing evidence is partial because expected variants are missing detailed pricing.</p> : null}
+        {diff.pricingCoverage.status === "UNVERIFIED" ? <p>Pricing completeness cannot be established from the recorded variant identities.</p> : null}
+        {diff.pricingCoverage.limited ? <p>Pricing evidence reached a pricing-specific safety limit.</p> : null}
+        {diff.pricingCoverage.changesTruncated ? <p>Additional identity-matched pricing changes were not returned because the pricing change limit was reached.</p> : null}
+        {!diff.pricingChanges.length ? <p>{diff.pricingCoverage.status === "COMPLETE"
           ? "No price or compare-at price changes were found in this comparison."
-          : "No price changes were found among variants with observable pricing details. Other variants might not be fully represented in this webhook payload."}</p> : <table>
+          : diff.pricingCoverage.status === "PARTIAL"
+            ? "No pricing changes were found among represented variants; expected variants are missing detailed pricing."
+            : "No pricing changes were found among observable variants; pricing completeness cannot be established."}</p> : <table>
           <thead><tr><th>Variant</th><th>SKU</th><th>Stable variant ID</th><th>Field</th><th>Before</th><th>After</th><th>Transition</th></tr></thead>
           <tbody>{diff.pricingChanges.map((change) => <tr key={`${change.variantId}:${change.field}`}>
             <td>{change.title ?? change.variantId}</td><td>{change.sku ?? "—"}</td><td><code>{change.variantId}</code></td>
@@ -138,10 +142,17 @@ export function HistoricalFindingsView({summary}: {summary: CatalogHistoricalFin
       <div aria-label="Historical finding occurrences">{summary.findings.map((finding) => <section key={finding.code}>
         <h3>{finding.label}</h3>
         <p>Detected in {finding.comparisonCount} of {summary.comparablePairCount} reviewed changes.</p>
+        {finding.code === "VARIANT_PRICING_CHANGED" ? <p>Within this bounded review: {finding.completePricingComparisonCount} complete, {finding.partialPricingComparisonCount} partial, and {finding.unverifiedPricingComparisonCount} unverified pricing comparisons.
+          {finding.pricingEvidenceLimitedComparisonCount ? ` ${finding.pricingEvidenceLimitedComparisonCount} reached a pricing evidence limit.` : ""}
+          {finding.pricingChangesTruncatedComparisonCount ? ` ${finding.pricingChangesTruncatedComparisonCount} had additional pricing changes not returned.` : ""}</p> : null}
         <ul>{finding.occurrences.map((occurrence) => <li key={occurrence.currentSnapshotId}>
           <time dateTime={occurrence.currentEffectiveAt.toISOString()}>{occurrence.currentEffectiveAt.toLocaleString()}</time>{" — "}
           {occurrence.evidenceCount} {occurrence.truncated ? "returned " : ""}evidence {occurrence.evidenceCount === 1 ? "signal" : "signals"}
           {occurrence.truncated ? " — Comparison truncated" : ""}{" — "}
+          {occurrence.pricingCoverageStatus === "PARTIAL" ? "Partial pricing evidence — " : ""}
+          {occurrence.pricingCoverageStatus === "UNVERIFIED" ? "Pricing completeness unverified — " : ""}
+          {occurrence.pricingEvidenceLimited ? "Pricing evidence limit reached — " : ""}
+          {occurrence.pricingChangesTruncated ? "Additional pricing changes not returned — " : ""}
           <Link to={`?snapshot=${encodeURIComponent(occurrence.currentSnapshotId)}`}>View comparison</Link>
         </li>)}</ul>
       </section>)}</div>
