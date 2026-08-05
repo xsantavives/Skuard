@@ -75,9 +75,12 @@ export function CatalogDiffView({diff}: {diff: CatalogStructuralDiff}) {
             <tbody>{signals.map((signal, index) => {
               const before = renderDiffValue(signal.before, Object.prototype.hasOwnProperty.call(signal, "before"));
               const after = renderDiffValue(signal.after, Object.prototype.hasOwnProperty.call(signal, "after"));
-              return <tr key={`${signal.operation}:${signal.path}:${index}`}><td>{signal.label}</td>
-                <td>{classifyCatalogDiffEntry(diff.resourceType, signal).label}</td><td><code>{signal.path}</code></td>
-                <td>{operations[signal.operation]}</td><td><code data-value-kind={before.kind}>{before.text}</code></td>
+              const structural = signal.evidenceKind === "STRUCTURAL_PATH";
+              return <tr key={structural ? `${signal.operation}:${signal.path}:${index}` : `${signal.variantId}:${signal.field}:${index}`}><td>{signal.label}</td>
+                <td>{structural ? classifyCatalogDiffEntry(diff.resourceType, signal).label : "Variant data"}</td>
+                <td><code>{structural ? signal.path : signal.variantId}</code></td>
+                <td>{structural ? operations[signal.operation] : signal.transition === "SET" ? "Set" : signal.transition === "CLEARED" ? "Cleared" : "Changed"}</td>
+                <td><code data-value-kind={before.kind}>{before.text}</code></td>
                 <td><code data-value-kind={after.kind}>{after.text}</code></td></tr>;
             })}</tbody>
           </table>

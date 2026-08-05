@@ -19,7 +19,7 @@ describe("deriveCatalogChangeSignals", () => {
     ["/variants/0/sku", "VARIANT_SKU_CHANGED"], ["/variants/0/barcode", "VARIANT_BARCODE_CHANGED"],
     ["/images/0/src", "PRODUCT_MEDIA_CHANGED"], ["/image/src", "PRODUCT_MEDIA_CHANGED"],
   ])("maps product path %s to %s", (path, code) => {
-    expect(deriveCatalogChangeSignals("PRODUCT", [entry(path)])[0]).toMatchObject({code, path, operation: "CHANGED"});
+    expect(deriveCatalogChangeSignals("PRODUCT", [entry(path)])[0]).toMatchObject({evidenceKind: "STRUCTURAL_PATH", code, path, operation: "CHANGED"});
   });
 
   it.each([

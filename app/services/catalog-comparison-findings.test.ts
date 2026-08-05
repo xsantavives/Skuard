@@ -1,8 +1,8 @@
 import {describe, expect, it} from "vitest";
 import {deriveCatalogComparisonFindings} from "./catalog-comparison-findings";
-import type {CatalogChangeSignal, CatalogChangeSignalCode} from "./catalog-change-signals";
+import type {CatalogChangeSignal, CatalogChangeSignalCode, StructuralCatalogChangeSignal} from "./catalog-change-signals";
 
-const signal = (code: CatalogChangeSignalCode, path = "/x"): CatalogChangeSignal => ({code, label: code, category:"OTHER", path, normalizedPath:path, operation:"CHANGED", before:"a", after:"b"});
+const signal = (code: CatalogChangeSignalCode, path = "/x"): StructuralCatalogChangeSignal => ({evidenceKind:"STRUCTURAL_PATH", code, label: code, category:"OTHER", path, normalizedPath:path, operation:"CHANGED", before:"a", after:"b"});
 const codes = (type: "PRODUCT"|"COLLECTION", values: CatalogChangeSignal[]) => deriveCatalogComparisonFindings(type, values).map((finding) => finding.code);
 
 describe("deterministic comparison findings", () => {

@@ -25,7 +25,8 @@ export const CATALOG_CHANGE_SIGNAL_CODES = [
 ] as const;
 
 export type CatalogChangeSignalCode = (typeof CATALOG_CHANGE_SIGNAL_CODES)[number];
-export interface CatalogChangeSignal {
+export interface StructuralCatalogChangeSignal {
+  evidenceKind: "STRUCTURAL_PATH";
   code: CatalogChangeSignalCode;
   label: string;
   category: CatalogChangeCategory;
@@ -35,6 +36,18 @@ export interface CatalogChangeSignal {
   before?: JsonValue;
   after?: JsonValue;
 }
+export interface VariantPricingCatalogChangeSignal {
+  evidenceKind: "VARIANT_PRICING";
+  code: "VARIANT_PRICE_CHANGED" | "VARIANT_COMPARE_AT_PRICE_CHANGED";
+  label: string;
+  category: "VARIANT_DATA";
+  variantId: string;
+  field: "PRICE" | "COMPARE_AT_PRICE";
+  before: string | null;
+  after: string | null;
+  transition: "CHANGED" | "SET" | "CLEARED";
+}
+export type CatalogChangeSignal = StructuralCatalogChangeSignal | VariantPricingCatalogChangeSignal;
 export interface CatalogChangeSignalSummary {code: CatalogChangeSignalCode; label: string; count: number}
 
 const LABELS: Record<CatalogChangeSignalCode, string> = {
@@ -94,7 +107,7 @@ export function deriveCatalogChangeSignals(
     const code = resourceType === "PRODUCT" ? matchProduct(parsed.normalizedPath) : matchCollection(parsed.normalizedPath);
     if (!code) return [];
     const {category} = classifyCatalogDiffEntry(resourceType, entry);
-    return [{...entry, code, label: LABELS[code], category, normalizedPath: parsed.normalizedPath}];
+    return [{...entry, evidenceKind: "STRUCTURAL_PATH" as const, code, label: LABELS[code], category, normalizedPath: parsed.normalizedPath}];
   });
 }
 
