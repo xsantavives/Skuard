@@ -2,6 +2,12 @@
 
 > Skuard is the observability layer for Shopify catalog operations.
 
+## Product roadmap
+
+The canonical Catalogged product roadmap, SKU status, phase boundaries, and
+strategic backlog are maintained in
+[`docs/product/roadmap.md`](docs/product/roadmap.md).
+
 This repository preserves **SKU-001 — Shopify Foundation** and adds **SKU-002 — Monitor Foundation**, the first, Observe-only catalog monitoring slice. The app uses the official React Router architecture, TypeScript, npm, Prisma session storage, and the GraphQL Admin API toolchain.
 
 ## Current scope
