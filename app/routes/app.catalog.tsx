@@ -188,6 +188,10 @@ export function CatalogFindingActivityView({
                     {" — "}
                     {finding.evidenceCount} {entry.truncated ? "returned " : ""}evidence{" "}
                     {finding.evidenceCount === 1 ? "signal" : "signals"}
+                    {finding.pricingCoverageStatus === "PARTIAL" ? " — Partial pricing evidence" : ""}
+                    {finding.pricingCoverageStatus === "UNVERIFIED" ? " — Pricing completeness unverified" : ""}
+                    {finding.pricingEvidenceLimited ? " — Pricing evidence limit reached" : ""}
+                    {finding.pricingChangesTruncated ? " — Additional pricing changes not returned" : ""}
                   </li>
                 ))}
               </ul>
@@ -242,11 +246,18 @@ export function CatalogDetectionOverviewView({page, filters = {}, search = ""}: 
         <h3>{group.label}</h3>
         <p>Seen in {group.comparisonCount} recent {group.comparisonCount === 1 ? "change" : "changes"} across {group.distinctResourceCount} {group.distinctResourceCount === 1 ? "resource" : "resources"}.</p>
         <p>Most recently detected: <time dateTime={group.latestOccurrence.effectiveAt.toISOString()}>{group.latestOccurrence.effectiveAt.toLocaleString()}</time></p>
+        {group.code === "VARIANT_PRICING_CHANGED" ? <p>Within this bounded candidate window: {group.completePricingComparisonCount} complete, {group.partialPricingComparisonCount} partial, and {group.unverifiedPricingComparisonCount} unverified pricing comparisons.
+          {group.pricingEvidenceLimitedComparisonCount ? ` ${group.pricingEvidenceLimitedComparisonCount} reached a pricing evidence limit.` : ""}
+          {group.pricingChangesTruncatedComparisonCount ? ` ${group.pricingChangesTruncatedComparisonCount} had additional pricing changes not returned.` : ""}</p> : null}
         {group.structurallyTruncatedComparisonCount ? <p>Some contributing changes reached the review limit, so these findings may be incomplete.</p> : null}
         <ul>{group.occurrences.map((occurrence) => <li key={occurrence.currentSnapshotId}>
           <Link to={`/app/catalog/${encodeURIComponent(occurrence.resourceType)}/${encodeURIComponent(occurrence.resourceId)}?snapshot=${encodeURIComponent(occurrence.currentSnapshotId)}`}>
             {occurrence.resourceType === "PRODUCT" ? "Product" : "Collection"} {occurrence.resourceId} — <time dateTime={occurrence.effectiveAt.toISOString()}>{occurrence.effectiveAt.toLocaleString()}</time>
-          </Link>{occurrence.structurallyTruncated ? " — Review may be incomplete" : ""}
+          </Link>{occurrence.structurallyTruncated ? " — Structural review may be incomplete" : ""}
+          {occurrence.pricingCoverageStatus === "PARTIAL" ? " — Partial pricing evidence" : ""}
+          {occurrence.pricingCoverageStatus === "UNVERIFIED" ? " — Pricing completeness unverified" : ""}
+          {occurrence.pricingEvidenceLimited ? " — Pricing evidence limit reached" : ""}
+          {occurrence.pricingChangesTruncated ? " — Additional pricing changes not returned" : ""}
         </li>)}</ul>
         {group.occurrencesTruncated ? <p>Additional recent occurrences are not shown.</p> : null}
       </article>)}

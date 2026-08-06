@@ -1,7 +1,7 @@
 import {CatalogResourceType} from "@prisma/client";
 import {describe, expect, it, vi} from "vitest";
-import {diffCanonicalJson, queryCatalogStructuralDiff, type CatalogDiffRepository,
-  type DiffSnapshot} from "./catalog-diff.server";
+import {queryCatalogStructuralDiff, type CatalogDiffRepository, type DiffSnapshot} from "./catalog-diff.server";
+import {diffCanonicalJson} from "./catalog-structural-diff";
 
 const limits = {maxDepth: 32, maxVisitedNodes: 20_000, maxEntries: 200};
 

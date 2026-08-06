@@ -9,6 +9,11 @@ const snapshot = (id: string, offset: number, state: unknown, overrides: Partial
   id, resourceType: CatalogResourceType.PRODUCT, resourceId: "product-1", sourceTopic: "PRODUCTS_UPDATE",
   state: JSON.stringify(state), isDeleted: false, occurredAt: at(offset), receivedAt: at(offset), createdAt: at(offset), ...overrides,
 });
+const gid = (id: number) => `gid://shopify/ProductVariant/${id}`;
+const priced = (price: string, expected: number[] | null = [1], details: number[] = [1]) => ({
+  variants: details.map((id) => ({id: gid(id), price, compare_at_price: null})),
+  ...(expected ? {variant_gids: expected.map(gid)} : {}),
+});
 
 describe("bounded historical finding summary", () => {
   it("normalizes default, maximum, and invalid limits deterministically", () => {
@@ -48,9 +53,9 @@ describe("bounded historical finding summary", () => {
 
   it("aggregates comparison counts separately from repeated evidence in fixed order", () => {
     const rows = [
-      snapshot("three", 3, {title: "C", variants: [{price: "3"}, {price: "4"}]}),
-      snapshot("two", 2, {title: "B", variants: [{price: "2"}, {price: "3"}]}),
-      snapshot("one", 1, {title: "A", variants: [{price: "1"}, {price: "2"}]}),
+      snapshot("three", 3, {title: "C", variants: [{id: 1, price: "3", compare_at_price: null}, {id: 2, price: "4", compare_at_price: null}]}),
+      snapshot("two", 2, {title: "B", variants: [{id: 1, price: "2", compare_at_price: null}, {id: 2, price: "3", compare_at_price: null}]}),
+      snapshot("one", 1, {title: "A", variants: [{id: 1, price: "1", compare_at_price: null}, {id: 2, price: "2", compare_at_price: null}]}),
     ];
     const result = summarizeCatalogFindingHistory("PRODUCT", "product-1", rows, 10, true);
     expect(result.comparablePairCount).toBe(2);
@@ -66,23 +71,48 @@ describe("bounded historical finding summary", () => {
     }
   });
 
+  it("propagates COMPLETE, PARTIAL, and UNVERIFIED pricing qualification only to pricing occurrences", () => {
+    for (const [current, previous, status] of [
+      [priced("2"), priced("1"), "COMPLETE"],
+      [priced("2", [1, 2]), priced("1", [1, 2]), "PARTIAL"],
+      [priced("2", null), priced("1", null), "UNVERIFIED"],
+    ] as const) {
+      const result = summarizeCatalogFindingHistory("PRODUCT", "product-1",
+        [snapshot("new", 2, {...current, title: "new"}), snapshot("old", 1, {...previous, title: "old"})], 10, true);
+      const pricing = result.findings.find(({code}) => code === "VARIANT_PRICING_CHANGED")!;
+      expect(pricing.occurrences[0]).toMatchObject({pricingCoverageStatus: status,
+        pricingEvidenceLimited: false, pricingChangesTruncated: false});
+      expect(pricing).toMatchObject({completePricingComparisonCount: status === "COMPLETE" ? 1 : 0,
+        partialPricingComparisonCount: status === "PARTIAL" ? 1 : 0,
+        unverifiedPricingComparisonCount: status === "UNVERIFIED" ? 1 : 0,
+        pricingEvidenceLimitedComparisonCount: 0, pricingChangesTruncatedComparisonCount: 0});
+      const identity = result.findings.find(({code}) => code === "PRODUCT_IDENTITY_CHANGED")!;
+      expect(identity).not.toHaveProperty("completePricingComparisonCount");
+      expect(identity.occurrences[0]).not.toHaveProperty("pricingCoverageStatus");
+    }
+  });
+
   it("keeps structurally truncated comparisons and their returned findings", () => {
-    const variants = Array.from({length: 250}, (_, index) => ({price: String(index + 1)}));
-    const previous = Array.from({length: 250}, (_, index) => ({price: String(index)}));
+    const variantGids = Array.from({length: 201}, (_, index) => gid(index + 1));
+    const variants = variantGids.map((id, index) => ({id, price: String(index + 2), compare_at_price: null}));
+    const previous = variantGids.map((id, index) => ({id, price: String(index + 1), compare_at_price: null}));
     const result = summarizeCatalogFindingHistory("PRODUCT", "product-1",
-      [snapshot("new", 2, {variants}), snapshot("old", 1, {variants: previous})], 10, true);
+      [snapshot("new", 2, {variants, variant_gids: variantGids}), snapshot("old", 1, {variants: previous, variant_gids: variantGids})], 10, true);
     expect(result).toMatchObject({comparablePairCount: 1, truncatedComparisonCount: 1});
     const finding = result.findings.find(({code}) => code === "VARIANT_PRICING_CHANGED");
     expect(finding).toMatchObject({comparisonCount: 1, evidenceCount: 200});
     expect(finding?.occurrences).toEqual([expect.objectContaining({currentSnapshotId: "new", previousSnapshotId: "old",
-      evidenceCount: 200, truncated: true})]);
+      evidenceCount: 200, truncated: true, pricingCoverageStatus: "UNVERIFIED",
+      pricingEvidenceLimited: true, pricingChangesTruncated: true})]);
+    expect(finding).toMatchObject({pricingEvidenceLimitedComparisonCount: 1, pricingChangesTruncatedComparisonCount: 1,
+      unverifiedPricingComparisonCount: 1});
   });
 
   it("keeps atomic and combination occurrences independent and preserves comparison order over evidence count", () => {
     const input = [
-      snapshot("new", 3, {title: "C", status: "ACTIVE", variants: [{price: "3"}]}),
-      snapshot("middle", 2, {title: "B", status: "DRAFT", variants: [{price: "1"}, {price: "2"}]}),
-      snapshot("old", 1, {title: "A", status: "DRAFT", variants: [{price: "0"}, {price: "1"}]}),
+      snapshot("new", 3, {title: "C", status: "ACTIVE", variants: [{id: 1, price: "3", compare_at_price: null}]}),
+      snapshot("middle", 2, {title: "B", status: "DRAFT", variants: [{id: 1, price: "1", compare_at_price: null}, {id: 2, price: "2", compare_at_price: null}]}),
+      snapshot("old", 1, {title: "A", status: "DRAFT", variants: [{id: 1, price: "0", compare_at_price: null}, {id: 2, price: "1", compare_at_price: null}]}),
     ];
     const copy = structuredClone(input);
     const first = summarizeCatalogFindingHistory("PRODUCT", "product-1", input, 10, true);

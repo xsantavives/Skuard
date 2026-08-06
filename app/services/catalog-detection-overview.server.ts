@@ -1,17 +1,16 @@
 import {CatalogResourceType, Prisma} from "@prisma/client";
 import {prisma} from "../db.server";
-import {deriveCatalogChangeSignals} from "./catalog-change-signals";
 import {
   CATALOG_COMPARISON_FINDING_CODES,
-  deriveCatalogComparisonFindings,
   type CatalogComparisonFinding,
   type CatalogComparisonFindingCode,
 } from "./catalog-comparison-findings";
 import {
   catalogComparableLifecycle,
-  diffCanonicalJson,
   type DiffSnapshot,
 } from "./catalog-diff.server";
+import {analyzeCatalogComparison} from "./catalog-comparison-analysis";
+import type {PricingCoverageStatus} from "./catalog-comparison-analysis";
 import {
   compareTimelineEntries,
   effectiveEventTime,
@@ -35,6 +34,9 @@ export interface CatalogDetectionOverviewOccurrence {
   effectiveAt: Date;
   returnedEvidenceCount: number;
   structurallyTruncated: boolean;
+  pricingCoverageStatus?: PricingCoverageStatus;
+  pricingEvidenceLimited?: boolean;
+  pricingChangesTruncated?: boolean;
 }
 
 type OrderedOccurrence = CatalogDetectionOverviewOccurrence & {
@@ -52,6 +54,11 @@ export interface CatalogDetectionOverviewGroup {
   latestOccurrence: CatalogDetectionOverviewOccurrence;
   occurrences: CatalogDetectionOverviewOccurrence[];
   occurrencesTruncated: boolean;
+  completePricingComparisonCount?: number;
+  partialPricingComparisonCount?: number;
+  unverifiedPricingComparisonCount?: number;
+  pricingEvidenceLimitedComparisonCount?: number;
+  pricingChangesTruncatedComparisonCount?: number;
 }
 
 export interface CatalogDetectionOverviewPage {
@@ -80,6 +87,9 @@ export type CatalogComparisonObservation =
       createdAt: Date;
       findings: CatalogComparisonFinding[];
       structurallyTruncated: boolean;
+      pricingCoverageStatus?: PricingCoverageStatus;
+      pricingEvidenceLimited?: boolean;
+      pricingChangesTruncated?: boolean;
     }
   | {status: "SKIPPED"; currentSnapshotId: string};
 
@@ -190,13 +200,15 @@ export function observeCatalogComparisons(pairs: readonly CatalogDetectionPair[]
     if (!previous) return {status: "SKIPPED", currentSnapshotId: current.id};
     const lifecycle = catalogComparableLifecycle(current, previous);
     if (!lifecycle.comparable) return {status: "SKIPPED", currentSnapshotId: current.id};
-    const diff = diffCanonicalJson(lifecycle.previousState, lifecycle.currentState);
+    const analysis = analyzeCatalogComparison(current.resourceType, lifecycle.previousState, lifecycle.currentState);
     return {status: "COMPARABLE", currentSnapshotId: current.id, previousSnapshotId: previous.id,
       resourceType: current.resourceType, resourceId: current.resourceId, effectiveAt: effectiveEventTime(current),
       receivedAt: current.receivedAt, createdAt: current.createdAt,
-      findings: deriveCatalogComparisonFindings(current.resourceType,
-        deriveCatalogChangeSignals(current.resourceType, diff.entries), {truncated: diff.truncated}),
-      structurallyTruncated: diff.truncated} satisfies CatalogComparisonObservation;
+      findings: analysis.findings,
+      structurallyTruncated: analysis.structural.truncated,
+      ...(analysis.pricing ? {pricingCoverageStatus: analysis.pricing.coverage.status,
+        pricingEvidenceLimited: analysis.pricing.coverage.limited,
+        pricingChangesTruncated: analysis.pricing.coverage.changesTruncated} : {})} satisfies CatalogComparisonObservation;
   });
 }
 
@@ -219,7 +231,9 @@ export function aggregateCatalogDetectionOverview(observations: readonly Catalog
       total.occurrences.push({currentSnapshotId: observation.currentSnapshotId, resourceType: observation.resourceType,
         resourceId: observation.resourceId, effectiveAt: observation.effectiveAt, receivedAt: observation.receivedAt,
         createdAt: observation.createdAt, returnedEvidenceCount: finding.evidenceCount,
-        structurallyTruncated: observation.structurallyTruncated});
+        structurallyTruncated: observation.structurallyTruncated, ...(finding.code === "VARIANT_PRICING_CHANGED" ? {
+          pricingCoverageStatus: observation.pricingCoverageStatus!, pricingEvidenceLimited: observation.pricingEvidenceLimited!,
+          pricingChangesTruncated: observation.pricingChangesTruncated!} : {})});
       totals.set(finding.code, total);
     }
   }
@@ -228,11 +242,18 @@ export function aggregateCatalogDetectionOverview(observations: readonly Catalog
     const total = totals.get(code); if (!total) return [];
     const ordered = [...total.occurrences].sort(compareOccurrences);
     latest.set(code, ordered[0]!);
+    const pricing = code === "VARIANT_PRICING_CHANGED" ? {
+      completePricingComparisonCount: ordered.filter((item) => item.pricingCoverageStatus === "COMPLETE").length,
+      partialPricingComparisonCount: ordered.filter((item) => item.pricingCoverageStatus === "PARTIAL").length,
+      unverifiedPricingComparisonCount: ordered.filter((item) => item.pricingCoverageStatus === "UNVERIFIED").length,
+      pricingEvidenceLimitedComparisonCount: ordered.filter((item) => item.pricingEvidenceLimited).length,
+      pricingChangesTruncatedComparisonCount: ordered.filter((item) => item.pricingChangesTruncated).length,
+    } : {};
     return [{code, label: total.label, comparisonCount: ordered.length, distinctResourceCount: total.resources.size,
       returnedEvidenceCount: ordered.reduce((sum, item) => sum + item.returnedEvidenceCount, 0),
       structurallyTruncatedComparisonCount: ordered.filter((item) => item.structurallyTruncated).length,
       latestOccurrence: publicOccurrence(ordered[0]!), occurrences: ordered.slice(0, limit).map(publicOccurrence),
-      occurrencesTruncated: ordered.length > limit} satisfies CatalogDetectionOverviewGroup];
+      occurrencesTruncated: ordered.length > limit, ...pricing} satisfies CatalogDetectionOverviewGroup];
   });
   return groups.sort((a, b) => compareOccurrences(latest.get(a.code)!, latest.get(b.code)!) ||
     CATALOG_COMPARISON_FINDING_CODES.indexOf(a.code) - CATALOG_COMPARISON_FINDING_CODES.indexOf(b.code));

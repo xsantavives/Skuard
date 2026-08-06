@@ -179,4 +179,12 @@ The overview adds no severity, risk, trend, anomaly, incident, policy, recommend
 
 ## Deployment validation
 
+## SKU-017 identity-aware variant pricing evidence
+
+SKU-017 gives Catalogged an evidence-quality foundation for merchant pricing observations; it is not the complete merchant pricing feature. Product variants share one canonical identity namespace, `gid://shopify/ProductVariant/<positive-safe-id>`, whether the recorded identity began as a safe positive numeric ID or an exact ProductVariant GID. Identity-aware pricing evidence is matched by that identity, never by array position, merchant labels, or fabricated JSON Pointer paths.
+
+Coverage is **COMPLETE** only when the expected and detailed canonical identity sets are exactly equal. It is **PARTIAL** only when expected identities positively prove that detailed pricing is missing and no unexpected detailed identity exists. Missing, malformed, duplicate, conflicting, inconsistent, or safety-limited identity evidence is **UNVERIFIED**. Structural truncation, pricing coverage, pricing evidence limits, and pricing-change truncation are independent qualifications; Catalogged propagates them through exact comparisons, history, finding activity, and the bounded detection overview.
+
+Recorded decimal values use a narrow string grammar and string-only normalization, so equivalent forms such as `10.00` and `10.0` compare equally while the original strings remain available for display. Catalogged does not infer currency. All evidence is derived on demand from immutable `CatalogSnapshot` records: there is no pricing persistence, Admin API fetch, Shopify write, or scope expansion beyond `read_products`. SKU-017 adds no Markets, B2B, Price Lists, catalog expansion, policies, alerts, incidents, recovery, rollback, automation, AI, or billing.
+
 Use the [Render and embedded Shopify Admin deployment-validation runbook](docs/deployment-validation.md) to configure the production service and record external validation results.

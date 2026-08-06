@@ -1,9 +1,10 @@
 import {CatalogResourceType, Prisma} from "@prisma/client";
 import {prisma} from "../db.server";
-import {deriveCatalogChangeSignals} from "./catalog-change-signals";
-import {CATALOG_COMPARISON_FINDING_CODES, deriveCatalogComparisonFindings,
+import {CATALOG_COMPARISON_FINDING_CODES,
   type CatalogComparisonFindingCode} from "./catalog-comparison-findings";
-import {catalogComparableLifecycle, diffCanonicalJson, type DiffSnapshot} from "./catalog-diff.server";
+import {catalogComparableLifecycle, type DiffSnapshot} from "./catalog-diff.server";
+import {analyzeCatalogComparison} from "./catalog-comparison-analysis";
+import type {PricingCoverageStatus} from "./catalog-comparison-analysis";
 import {CATALOG_TIMELINE_ORDER_SQL, compareTimelineEntries, effectiveEventTime} from "./catalog-timeline.server";
 
 export const DEFAULT_HISTORICAL_COMPARISON_LIMIT = 10;
@@ -12,10 +13,14 @@ export const MAX_HISTORICAL_COMPARISON_LIMIT = 20;
 export interface CatalogHistoricalFindingReference {
   currentSnapshotId: string; previousSnapshotId: string; currentEffectiveAt: Date; previousEffectiveAt: Date;
   evidenceCount: number; truncated: boolean;
+  pricingCoverageStatus?: PricingCoverageStatus; pricingEvidenceLimited?: boolean; pricingChangesTruncated?: boolean;
 }
 export interface CatalogHistoricalFindingSummaryItem {
   code: CatalogComparisonFindingCode; label: string; comparisonCount: number; evidenceCount: number;
   occurrences: CatalogHistoricalFindingReference[];
+  completePricingComparisonCount?: number; partialPricingComparisonCount?: number;
+  unverifiedPricingComparisonCount?: number; pricingEvidenceLimitedComparisonCount?: number;
+  pricingChangesTruncatedComparisonCount?: number;
 }
 export interface CatalogHistoricalFindingSummary {
   resourceType: CatalogResourceType; resourceId: string; requestedComparisonLimit: number; snapshotCount: number;
@@ -48,18 +53,29 @@ export function summarizeCatalogFindingHistory(resourceType: CatalogResourceType
     const lifecycle = catalogComparableLifecycle(current, previous);
     if (!lifecycle.comparable) continue;
     comparablePairCount += 1;
-    const diff = diffCanonicalJson(lifecycle.previousState, lifecycle.currentState);
-    if (diff.truncated) truncatedComparisonCount += 1;
-    const findings = deriveCatalogComparisonFindings(resourceType, deriveCatalogChangeSignals(resourceType, diff.entries),
-      {truncated: diff.truncated});
+    const analysis = analyzeCatalogComparison(resourceType, lifecycle.previousState, lifecycle.currentState);
+    if (analysis.structural.truncated) truncatedComparisonCount += 1;
+    const findings = analysis.findings;
     for (const finding of findings) {
+      const pricing = finding.code === "VARIANT_PRICING_CHANGED" ? analysis.pricing?.coverage : undefined;
       const total = totals.get(finding.code) ?? {code: finding.code, label: finding.label, comparisonCount: 0,
-        evidenceCount: 0, occurrences: []};
+        evidenceCount: 0, occurrences: [], ...(pricing ? {completePricingComparisonCount: 0,
+          partialPricingComparisonCount: 0, unverifiedPricingComparisonCount: 0,
+          pricingEvidenceLimitedComparisonCount: 0, pricingChangesTruncatedComparisonCount: 0} : {})};
       total.occurrences.push({currentSnapshotId: current.id, previousSnapshotId: previous.id,
         currentEffectiveAt: effectiveEventTime(current), previousEffectiveAt: effectiveEventTime(previous),
-        evidenceCount: finding.evidenceCount, truncated: diff.truncated});
+        evidenceCount: finding.evidenceCount, truncated: analysis.structural.truncated, ...(pricing ? {
+          pricingCoverageStatus: pricing.status, pricingEvidenceLimited: pricing.limited,
+          pricingChangesTruncated: pricing.changesTruncated} : {})});
       total.comparisonCount = total.occurrences.length;
       total.evidenceCount += finding.evidenceCount;
+      if (pricing) {
+        const coverageCount = pricing.status === "COMPLETE" ? "completePricingComparisonCount" :
+          pricing.status === "PARTIAL" ? "partialPricingComparisonCount" : "unverifiedPricingComparisonCount";
+        total[coverageCount] = (total[coverageCount] ?? 0) + 1;
+        if (pricing.limited) total.pricingEvidenceLimitedComparisonCount = (total.pricingEvidenceLimitedComparisonCount ?? 0) + 1;
+        if (pricing.changesTruncated) total.pricingChangesTruncatedComparisonCount = (total.pricingChangesTruncatedComparisonCount ?? 0) + 1;
+      }
       totals.set(finding.code, total);
     }
   }

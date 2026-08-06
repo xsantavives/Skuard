@@ -1,62 +1,27 @@
 import {CatalogResourceType, Prisma} from "@prisma/client";
 import {prisma} from "../db.server";
 import type {JsonValue} from "./catalog-json.server";
+import {DEFAULT_CATALOG_DIFF_LIMITS, type CatalogDiffEntry, type CatalogDiffLimits} from "./catalog-structural-diff";
+import {analyzeCatalogComparison, type PricingCoverage, type VariantPricingChange} from "./catalog-comparison-analysis";
 import {actionForCatalogTopic, CATALOG_TIMELINE_ORDER_SQL, effectiveEventTime, snapshotBeforeSql} from "./catalog-timeline.server";
 
-export const DEFAULT_CATALOG_DIFF_LIMITS = {maxDepth: 32, maxVisitedNodes: 20_000, maxEntries: 200} as const;
-export interface CatalogDiffLimits {maxDepth: number; maxVisitedNodes: number; maxEntries: number}
-export type CatalogDiffOperation = "ADDED" | "REMOVED" | "CHANGED";
-export interface CatalogDiffEntry {path: string; operation: CatalogDiffOperation; before?: JsonValue; after?: JsonValue}
-export interface JsonDiffResult {entries: CatalogDiffEntry[]; truncated: boolean; visitedNodes: number}
 export type CatalogDiffStatus = "COMPARABLE" | "NO_PREVIOUS_SNAPSHOT" | "CREATED_WITHOUT_BASELINE" |
   "DELETED_TOMBSTONE" | "PREVIOUS_TOMBSTONE" | "LIMIT_EXCEEDED" | "INVALID_LIFECYCLE";
-export interface CatalogStructuralDiff {
+interface CatalogStructuralDiffBase {
   currentSnapshotId: string; previousSnapshotId?: string; resourceType: CatalogResourceType; resourceId: string;
-  status: CatalogDiffStatus; entries: CatalogDiffEntry[]; returnedChangeCount: number; truncated: boolean;
+  entries: CatalogDiffEntry[]; returnedChangeCount: number; truncated: boolean;
   currentEffectiveAt: Date; previousEffectiveAt?: Date; currentAction: "CREATED" | "UPDATED" | "DELETED";
 }
-
-const jsonType = (value: JsonValue) => value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
-const childPath = (path: string, key: string) => `${path}/${key.replaceAll("~", "~0").replaceAll("/", "~1")}`;
-
-export function diffCanonicalJson(previous: JsonValue, current: JsonValue,
-  limits: CatalogDiffLimits = DEFAULT_CATALOG_DIFF_LIMITS): JsonDiffResult {
-  const entries: CatalogDiffEntry[] = []; let visitedNodes = 0; let truncated = false;
-  const add = (entry: CatalogDiffEntry) => {
-    if (entries.length >= Math.max(0, limits.maxEntries)) { truncated = true; return; }
-    entries.push(entry);
-  };
-  const walk = (before: JsonValue, after: JsonValue, path: string, depth: number) => {
-    if (truncated || depth > limits.maxDepth || visitedNodes >= limits.maxVisitedNodes) { truncated = true; return; }
-    visitedNodes += 1;
-    const beforeType = jsonType(before); const afterType = jsonType(after);
-    if (beforeType !== afterType) { add({path, operation: "CHANGED", before, after}); return; }
-    if (Array.isArray(before) && Array.isArray(after)) {
-      for (let index = 0; index < Math.max(before.length, after.length) && !truncated; index += 1) {
-        const indexedPath = childPath(path, String(index));
-        if (index >= before.length) add({path: indexedPath, operation: "ADDED", after: after[index]!});
-        else if (index >= after.length) add({path: indexedPath, operation: "REMOVED", before: before[index]!});
-        else walk(before[index]!, after[index]!, indexedPath, depth + 1);
-      }
-      return;
-    }
-    if (beforeType === "object") {
-      const oldObject = before as Record<string, JsonValue>; const newObject = after as Record<string, JsonValue>;
-      const keys = [...new Set([...Object.keys(oldObject), ...Object.keys(newObject)])].sort();
-      for (const key of keys) {
-        if (truncated) break;
-        const hasBefore = Object.prototype.hasOwnProperty.call(oldObject, key);
-        const hasAfter = Object.prototype.hasOwnProperty.call(newObject, key); const keyedPath = childPath(path, key);
-        if (!hasBefore) add({path: keyedPath, operation: "ADDED", after: newObject[key]!});
-        else if (!hasAfter) add({path: keyedPath, operation: "REMOVED", before: oldObject[key]!});
-        else walk(oldObject[key]!, newObject[key]!, keyedPath, depth + 1);
-      }
-      return;
-    }
-    if (before !== after) add({path, operation: "CHANGED", before, after});
-  };
-  walk(previous, current, "", 0); return {entries, truncated, visitedNodes};
-}
+type CatalogComparableDiff = CatalogStructuralDiffBase & {
+  status: "COMPARABLE" | "LIMIT_EXCEEDED";
+  signals: import("./catalog-change-signals").CatalogChangeSignal[];
+  findings: import("./catalog-comparison-findings").CatalogComparisonFinding[];
+} & ({resourceType: typeof CatalogResourceType.PRODUCT; pricingChanges: VariantPricingChange[]; pricingCoverage: PricingCoverage} |
+  {resourceType: typeof CatalogResourceType.COLLECTION});
+type CatalogNonComparableDiff = CatalogStructuralDiffBase & {
+  status: Exclude<CatalogDiffStatus, "COMPARABLE" | "LIMIT_EXCEEDED">;
+};
+export type CatalogStructuralDiff = CatalogComparableDiff | CatalogNonComparableDiff;
 
 export interface DiffSnapshot {id: string; resourceType: CatalogResourceType; resourceId: string; sourceTopic: string;
   state: string; isDeleted: boolean; occurredAt: Date | null; receivedAt: Date; createdAt: Date}
@@ -105,7 +70,7 @@ export async function queryCatalogStructuralDiff(shop: string, resourceType: str
     !Object.values(CatalogResourceType).includes(resourceType as CatalogResourceType)) return undefined;
   const current = await repository.findCurrent({shop, resourceType: resourceType as CatalogResourceType, resourceId, snapshotId});
   if (!current) return undefined;
-  let action: CatalogStructuralDiff["currentAction"] = "UPDATED"; let validAction = true;
+  let action: CatalogStructuralDiffBase["currentAction"] = "UPDATED"; let validAction = true;
   try { action = actionForCatalogTopic(current.sourceTopic); } catch { validAction = false; }
   const base = {currentSnapshotId: current.id, resourceType: current.resourceType, resourceId: current.resourceId,
     entries: [] as CatalogDiffEntry[], returnedChangeCount: 0, truncated: false,
@@ -121,7 +86,9 @@ export async function queryCatalogStructuralDiff(shop: string, resourceType: str
       lifecycle.reason === "CURRENT_NOT_UPDATE" ? "CREATED_WITHOUT_BASELINE" : "INVALID_LIFECYCLE";
     return {...withPrevious, status};
   }
-  const result = diffCanonicalJson(lifecycle.previousState, lifecycle.currentState, limits);
-  return {...withPrevious, status: result.truncated ? "LIMIT_EXCEEDED" : "COMPARABLE", entries: result.entries,
-    returnedChangeCount: result.entries.length, truncated: result.truncated};
+  const analysis = analyzeCatalogComparison(current.resourceType, lifecycle.previousState, lifecycle.currentState, {structural: limits});
+  return {...withPrevious, status: analysis.structural.truncated ? "LIMIT_EXCEEDED" : "COMPARABLE", entries: analysis.structural.entries,
+    returnedChangeCount: analysis.structural.entries.length, truncated: analysis.structural.truncated, signals: analysis.signals,
+    findings: analysis.findings, ...(current.resourceType === CatalogResourceType.PRODUCT && analysis.pricing ?
+      {pricingChanges: analysis.pricing.changes, pricingCoverage: analysis.pricing.coverage} : {})} as CatalogStructuralDiff;
 }

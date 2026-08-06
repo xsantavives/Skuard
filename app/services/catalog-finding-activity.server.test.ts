@@ -36,6 +36,7 @@ const pair = (
   current: snapshot(id, day, current),
   previous: snapshot(`${id}-previous`, day - 1, previous),
 });
+const variantGid = "gid://shopify/ProductVariant/1";
 
 describe("bounded catalog finding activity", () => {
   it("normalizes bounds deterministically", () => {
@@ -88,8 +89,8 @@ describe("bounded catalog finding activity", () => {
         pair(
           "new",
           20,
-          {title: "New", status: "active", variants: [{price: "12", sku: "B"}]},
-          {title: "Old", status: "draft", variants: [{price: "10", sku: "A"}]},
+          {title: "New", status: "active", variants: [{id: variantGid, price: "12", compare_at_price: null, sku: "B"}], variant_gids: [variantGid]},
+          {title: "Old", status: "draft", variants: [{id: variantGid, price: "10", compare_at_price: null, sku: "A"}], variant_gids: [variantGid]},
         ),
       ],
       25,
@@ -110,6 +111,25 @@ describe("bounded catalog finding activity", () => {
       "PRODUCT_IDENTITY_AND_PUBLICATION_CHANGED",
     ]);
     expect(result.entries[0]!.findings[0]!.evidenceCount).toBe(1);
+    const pricing = result.entries[0]!.findings.find(({code}) => code === "VARIANT_PRICING_CHANGED")!;
+    expect(pricing).toMatchObject({pricingCoverageStatus: "COMPLETE", pricingEvidenceLimited: false,
+      pricingChangesTruncated: false});
+    for (const nonPricing of result.entries[0]!.findings.filter(({code}) => code !== "VARIANT_PRICING_CHANGED"))
+      expect(nonPricing).not.toHaveProperty("pricingCoverageStatus");
+  });
+
+  it("copies PARTIAL and UNVERIFIED qualification without changing candidate pagination counts", () => {
+    const partial = pair("partial", 22,
+      {variants: [{id: variantGid, price: "2", compare_at_price: null}], variant_gids: [variantGid, "gid://shopify/ProductVariant/2"]},
+      {variants: [{id: variantGid, price: "1", compare_at_price: null}], variant_gids: [variantGid, "gid://shopify/ProductVariant/2"]});
+    const unverified = pair("unverified", 21,
+      {variants: [{id: variantGid, price: "2", compare_at_price: null}]},
+      {variants: [{id: variantGid, price: "1", compare_at_price: null}]});
+    const beyond = pair("beyond", 20, {title: "new"}, {title: "old"});
+    const result = deriveCatalogFindingActivity([beyond, unverified, partial], 2);
+    expect(result).toMatchObject({candidateCount: 2, comparableCount: 2, skippedCount: 0,
+      findingBearingCount: 2, hasNextPage: true});
+    expect(result.entries.map((entry) => entry.findings[0]?.pricingCoverageStatus)).toEqual(["PARTIAL", "UNVERIFIED"]);
   });
 
   it("does not bypass tombstones and counts zero-finding comparable candidates without emitting", () => {

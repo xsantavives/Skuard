@@ -14,6 +14,8 @@ import {
   type CatalogComparisonObservation,
   type CatalogDetectionPair,
 } from "./catalog-detection-overview.server";
+import type {CatalogComparisonFindingCode} from "./catalog-comparison-findings";
+import type {PricingCoverageStatus} from "./catalog-comparison-analysis";
 
 const at = (day: number, suffix = "12:00:00.000Z") => new Date(`2026-07-${String(day).padStart(2, "0")}T${suffix}`);
 const snapshot = (id: string, day: number, state: object | string, options: {resourceType?: CatalogResourceType;
@@ -26,15 +28,19 @@ const snapshot = (id: string, day: number, state: object | string, options: {res
 const pair = (id: string, day: number, current: object, previous: object, options = {}): CatalogDetectionPair => ({
   current: snapshot(id, day, current, options), previous: snapshot(`${id}-previous`, day - 1, previous, options),
 });
-const finding = (code: "PRODUCT_IDENTITY_CHANGED" | "PRODUCT_PUBLICATION_CHANGED", label: string, evidenceCount: number) =>
+const finding = (code: CatalogComparisonFindingCode, label: string, evidenceCount: number) =>
   ({code, label, evidenceCount, evidenceSignalCodes: []});
 const observation = (id: string, day: number, options: {resourceType?: CatalogResourceType; resourceId?: string;
-  receivedAt?: Date; createdAt?: Date; findings?: ReturnType<typeof finding>[]; truncated?: boolean} = {}): CatalogComparisonObservation => ({
+  receivedAt?: Date; createdAt?: Date; findings?: ReturnType<typeof finding>[]; truncated?: boolean;
+  pricingCoverageStatus?: PricingCoverageStatus; pricingEvidenceLimited?: boolean; pricingChangesTruncated?: boolean} = {}): CatalogComparisonObservation => ({
   status: "COMPARABLE", currentSnapshotId: id, previousSnapshotId: `${id}-previous`,
   resourceType: options.resourceType ?? CatalogResourceType.PRODUCT, resourceId: options.resourceId ?? "same",
   effectiveAt: at(day), receivedAt: options.receivedAt ?? at(day), createdAt: options.createdAt ?? at(day),
   findings: options.findings ?? [finding("PRODUCT_IDENTITY_CHANGED", "Identity", 1)],
   structurallyTruncated: options.truncated ?? false,
+  ...(options.pricingCoverageStatus ? {pricingCoverageStatus: options.pricingCoverageStatus,
+    pricingEvidenceLimited: options.pricingEvidenceLimited ?? false,
+    pricingChangesTruncated: options.pricingChangesTruncated ?? false} : {}),
 });
 
 describe("catalog detection overview aggregation", () => {
@@ -63,6 +69,26 @@ describe("catalog detection overview aggregation", () => {
         finding("PRODUCT_IDENTITY_CHANGED", "Identity", 1)]}),
     ]);
     expect(result.map((item) => item.code)).toEqual(["PRODUCT_IDENTITY_CHANGED", "PRODUCT_PUBLICATION_CHANGED"]);
+  });
+
+  it("aggregates pricing qualification while non-pricing groups and occurrences omit it", () => {
+    const pricingFinding = finding("VARIANT_PRICING_CHANGED", "Pricing", 1);
+    const result = aggregateCatalogDetectionOverview([
+      observation("complete", 24, {findings: [pricingFinding], pricingCoverageStatus: "COMPLETE"}),
+      observation("partial", 23, {findings: [pricingFinding], pricingCoverageStatus: "PARTIAL", truncated: true}),
+      observation("unverified", 22, {findings: [pricingFinding], pricingCoverageStatus: "UNVERIFIED",
+        pricingEvidenceLimited: true, pricingChangesTruncated: true}),
+      observation("identity", 21),
+    ]);
+    const pricing = result.find(({code}) => code === "VARIANT_PRICING_CHANGED")!;
+    expect(pricing).toMatchObject({completePricingComparisonCount: 1, partialPricingComparisonCount: 1,
+      unverifiedPricingComparisonCount: 1, pricingEvidenceLimitedComparisonCount: 1,
+      pricingChangesTruncatedComparisonCount: 1, structurallyTruncatedComparisonCount: 1});
+    expect(pricing.occurrences[0]).toMatchObject({pricingCoverageStatus: "COMPLETE",
+      pricingEvidenceLimited: false, pricingChangesTruncated: false});
+    const identity = result.find(({code}) => code === "PRODUCT_IDENTITY_CHANGED")!;
+    expect(identity).not.toHaveProperty("completePricingComparisonCount");
+    expect(identity.occurrences[0]).not.toHaveProperty("pricingCoverageStatus");
   });
 
   it("uses received, created, and snapshot ID tie breakers and bounds occurrences", () => {

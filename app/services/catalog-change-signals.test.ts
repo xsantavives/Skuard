@@ -16,12 +16,10 @@ describe("deriveCatalogChangeSignals", () => {
     ["/published_scope", "PRODUCT_PUBLICATION_CHANGED"], ["/vendor", "PRODUCT_VENDOR_CHANGED"],
     ["/product_type", "PRODUCT_TYPE_CHANGED"], ["/tags", "PRODUCT_TAGS_CHANGED"],
     ["/tags/0", "PRODUCT_TAGS_CHANGED"], ["/options/0/name", "PRODUCT_OPTIONS_CHANGED"],
-    ["/variants/0/price", "VARIANT_PRICE_CHANGED"], ["/variants/12/price", "VARIANT_PRICE_CHANGED"],
-    ["/variants/0/compare_at_price", "VARIANT_COMPARE_AT_PRICE_CHANGED"],
     ["/variants/0/sku", "VARIANT_SKU_CHANGED"], ["/variants/0/barcode", "VARIANT_BARCODE_CHANGED"],
     ["/images/0/src", "PRODUCT_MEDIA_CHANGED"], ["/image/src", "PRODUCT_MEDIA_CHANGED"],
   ])("maps product path %s to %s", (path, code) => {
-    expect(deriveCatalogChangeSignals("PRODUCT", [entry(path)])[0]).toMatchObject({code, path, operation: "CHANGED"});
+    expect(deriveCatalogChangeSignals("PRODUCT", [entry(path)])[0]).toMatchObject({evidenceKind: "STRUCTURAL_PATH", code, path, operation: "CHANGED"});
   });
 
   it.each([
@@ -87,14 +85,12 @@ describe("deriveCatalogChangeSignals", () => {
 
 describe("summarizeCatalogChangeSignals", () => {
   it("uses fixed order, counts distinct evidence, omits zeroes, and is deterministic", () => {
-    const signals = deriveCatalogChangeSignals("PRODUCT", [entry("/variants/0/price"), entry("/title"),
-      entry("/variants/1/price"), entry("/handle")]);
+    const signals = deriveCatalogChangeSignals("PRODUCT", [entry("/title"), entry("/handle")]);
     const original = structuredClone(signals);
     const summary = summarizeCatalogChangeSignals(signals);
     expect(summary).toEqual([
       {code: "PRODUCT_TITLE_CHANGED", label: "Product title changed", count: 1},
       {code: "PRODUCT_HANDLE_CHANGED", label: "Product handle changed", count: 1},
-      {code: "VARIANT_PRICE_CHANGED", label: "Variant price changed", count: 2},
     ]);
     expect(summary.reduce((total, item) => total + item.count, 0)).toBe(signals.length);
     expect(signals).toEqual(original);
